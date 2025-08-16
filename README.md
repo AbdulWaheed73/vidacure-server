@@ -1,1 +1,0 @@
-# vidacure-server
