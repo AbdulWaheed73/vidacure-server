@@ -19,10 +19,10 @@ Create a `.env` file in the root directory with the following variables:
 
 ```env
 # Criipto OIDC Configuration
-CRIIPTO_DOMAIN=https://criiptoiddomain1-test.criipto.id
-CRIIPTO_CLIENT_ID=urn:my:application:identifier:37643
-CRIIPTO_CLIENT_SECRET=FcrTwSi/LdpsFJZSjbqIbaIy+svliyo3oLxhL2oqsuM=
-REDIRECT_URI=http://localhost:3000/api/callback
+CRIIPTO_DOMAIN==
+CRIIPTO_CLIENT_ID=
+CRIIPTO_CLIENT_SECRET=
+REDIRECT_URI=
 
 # JWT and Security
 JWT_SECRET=your-super-secret-jwt-key-change-in-production

@@ -12,7 +12,7 @@ const JWT_SECRET: string = process.env.JWT_SECRET as string;
 const SSN_HASH_SECRET: string = process.env.SSN_HASH_SECRET as string;
 
 // Initialize configuration manager
-const configManager = new OpenIDConfigurationManager(domain, clientId);
+const configManager = new OpenIDConfigurationManager(`https://${domain}`, clientId);
 let appConfig: any;
 
 // Utility functions
@@ -102,6 +102,10 @@ export async function initializeAuth(): Promise<void> {
   try {
     // Check if required environment variables are set
     if (!domain || !clientId || !clientSecret) {
+      console.log("⚠️ Environment variables check:");
+      console.log("  CRIIPTO_DOMAIN:", domain ? "✅ Set" : "❌ Missing");
+      console.log("  CRIIPTO_CLIENT_ID:", clientId ? "✅ Set" : "❌ Missing");
+      console.log("  CRIIPTO_CLIENT_SECRET:", clientSecret ? "✅ Set" : "❌ Missing");
       throw new Error("Missing required Criipto environment variables");
     }
     
@@ -121,7 +125,14 @@ export function getAppConfig() {
   return appConfig;
 }
 
-export function getRedirectUri() {
+export function getRedirectUri(req?: any) {
+  // If we have a request object, use the request's host
+  if (req && req.headers && req.headers.host) {
+    const protocol = req.headers['x-forwarded-proto'] || 'http';
+    return `${protocol}://${req.headers.host}/api/callback`;
+  }
+  
+  // Fallback to environment variable
   return redirectUri;
 }
 

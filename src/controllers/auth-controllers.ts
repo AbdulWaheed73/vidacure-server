@@ -6,22 +6,50 @@ import {
   createAppJWT, 
   generateRandomState, 
   generateCSRFToken,
+  verifyAppJWT,
   getAppConfig,
   getRedirectUri,
-  getClientSecret
+  getClientSecret,
 } from "../services/auth-service";
 import { CriiptoUserClaims } from "../types/generic-types";
+
+  import { browserDetails } from "../middleware/auth-middleware";
 
 export const initiateLogin = (req: Request, res: Response): void => {
   try {
     const state = generateRandomState();
+    const clientType = browserDetails(req, res);
+    console.log("Client type detected:", clientType);
+    
+    // Determine ACR values based on client type
+    let acrValues: string;
+    switch (clientType) {
+      case "web":
+        // Desktop web - show QR code for mobile app
+        acrValues = "urn:grn:authn:se:bankid:another-device:qr";
+        break;
+      case "mobile":
+        // Mobile browser - try to open app, fallback to QR
+        acrValues = "urn:grn:authn:se:bankid:same-device";
+        break;
+      case "app":
+        // Native mobile app - direct BankID authentication
+        acrValues = "urn:grn:authn:se:bankid";
+        break;
+      default:
+        // Fallback to web behavior
+        acrValues = "urn:grn:authn:se:bankid:another-device:qr";
+    }
+    
+    console.log("Using ACR values:", acrValues);
     
     const url = buildAuthorizeURL(getAppConfig(), {
-      redirect_uri: getRedirectUri(),
+      redirect_uri: getRedirectUri(req),
       response_type: "code",
       scope: "openid profile",
       state,
-      response_mode: "query"
+      response_mode: "query",
+      acr_values: acrValues
     });
     
     // Store state for validation (in production, use proper session store)
@@ -88,7 +116,7 @@ export const handleCallback = async (req: Request, res: Response): Promise<void>
     // Exchange code for tokens
     const tokens: any = await codeExchange(getAppConfig(), {
       code,
-      redirect_uri: getRedirectUri(),
+      redirect_uri: getRedirectUri(req),
       client_secret: getClientSecret(),
     });
     
@@ -114,19 +142,19 @@ export const handleCallback = async (req: Request, res: Response): Promise<void>
     res.cookie("app_token", appJWT, { 
       httpOnly: true, 
       secure: false, // Set to true in production with HTTPS
-      maxAge: 30 * 60 * 1000 // 30 minutes
+      maxAge: 24 * 60 * 60 * 1000 // 30 minutes
     });
     
-    // Return success response (no sensitive data)
-    res.json({ 
-      success: true, 
-      message: isNewUser ? "Welcome! Account created successfully." : "Login successful!",
-      user: {
-        name: user.name,
-        role: user.role
-      },
-      csrfToken // Frontend needs this for API calls
+    // Store CSRF token in a non-httpOnly cookie so frontend can access it
+    res.cookie("csrf_token", csrfToken, { 
+      httpOnly: false, // Allow frontend to read this
+      secure: false, // Set to true in production with HTTPS
+      maxAge: 24 * 60 * 60 * 1000 // 30 minutes
     });
+    
+    // Redirect back to frontend with success message
+    const frontendUrl = process.env.FRONTEND_URL || 'http://192.168.0.101:5173';
+    res.redirect(`${frontendUrl}?auth=success&message=${encodeURIComponent(isNewUser ? 'Welcome! Account created successfully.' : 'Login successful!')}`);
     
   } catch (error) {
     console.error("❌ Callback error:", error);
@@ -139,13 +167,47 @@ export const handleCallback = async (req: Request, res: Response): Promise<void>
 
 export const getCurrentUser = (req: Request, res: Response): void => {
   try {
-    // This would typically get user data from the database
-    // For now, just return a success message
+    // Get user data from the JWT token in the cookie
+    const appToken = req.cookies.app_token;
+    
+    if (!appToken) {
+      res.status(401).json({ 
+        authenticated: false, 
+        message: "No authentication token found" 
+      });
+      return;
+    }
+
+    // Verify the JWT token
+    const decodedToken = verifyAppJWT(appToken);
+    
+    if (!decodedToken) {
+      res.status(401).json({ 
+        authenticated: false, 
+        message: "Invalid or expired token" 
+      });
+      return;
+    }
+
+    // Get the existing CSRF token from cookie
+    const existingCsrfToken = req.cookies.csrf_token;
+    
+    // For now, return mock user data based on the token
+    // In production, you'd fetch this from the database
+    const userData = {
+      name: "Authenticated User", // This should come from database
+      role: decodedToken.role,
+      userId: decodedToken.userId
+    };
+
     res.json({ 
       authenticated: true, 
-      message: "User is authenticated"
+      message: "User is authenticated",
+      user: userData,
+      csrfToken: existingCsrfToken || 'no-csrf-token'
     });
   } catch (error) {
+    console.error("Error in getCurrentUser:", error);
     res.status(500).json({ error: "Failed to fetch user data" });
   }
 };
@@ -153,6 +215,7 @@ export const getCurrentUser = (req: Request, res: Response): void => {
 export const logout = (req: Request, res: Response): void => {
   try {
     res.clearCookie("app_token");
+    res.clearCookie("csrf_token");
     res.json({ success: true, message: "Logged out successfully" });
   } catch (error) {
     res.status(500).json({ error: "Failed to logout" });

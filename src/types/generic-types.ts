@@ -1,6 +1,6 @@
 import { JwtPayload } from "jsonwebtoken";
 import { ObjectId } from "mongodb";
-import { Request } from "express";
+import { Request, Response, NextFunction } from "express";
 
 // Criipto OIDC related types
 export interface CriiptoUserClaims extends JwtPayload {

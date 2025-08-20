@@ -9,10 +9,7 @@ import patientRoutes from "./routes/patient-routes";
 import { requireAuth, requireCSRF } from "./middleware/auth-middleware";
 
 const app = express();
-const PORT = process.env.PORT || 3001;
-
-// Enable CORS for all routes
-app.use(cors());  // This will allow all origins by default
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Connect to MongoDB
 databaseConnection()
@@ -24,13 +21,28 @@ databaseConnection()
     process.exit(1);
   });
 
-  const corsOptions = {
-    origin: "http://localhost:3000",  // Replace with your frontend URL (can be a list of allowed origins)
-    methods: "GET,POST,PUT,DELETE",  // Specify the allowed HTTP methods
-    allowedHeaders: "Content-Type, Authorization", // Allowed headers
-  };
-  
-  app.use(cors(corsOptions));
+// Configure CORS for development
+const corsOptions = {
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:5173", 
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:5176",
+    "http://localhost:5177",
+    "http://192.168.0.101:3000",
+    "http://192.168.0.101:5173",
+    "http://192.168.0.101:5174", 
+    "http://192.168.0.101:5175",
+    "http://192.168.0.101:5176",
+    "http://192.168.0.101:5177"
+  ], // Allow multiple frontend ports and IP addresses
+  methods: "GET,POST,PUT,DELETE",
+  allowedHeaders: "Content-Type, Authorization, x-csrf-token, x-client", // Added CSRF token header
+  credentials: true, // Allow cookies and credentials
+};
+
+app.use(cors(corsOptions));
 
 // Middleware
 app.use(express.json());
@@ -55,37 +67,39 @@ app.use("/patient", requireAuth, requireCSRF, patientRoutes);
 // app.use("/order", orderRoutes);
 
 // Root Route
-app.get("/", (req: Request, res: Response) => {
-  res.send(`
-    <h1>Secure Healthcare Authentication System</h1>
-    <p>Available endpoints:</p>
-    <ul>
-      <li><a href="/api/login">🔐 Login with BankID</a></li>
-      <li><a href="/api/me">👤 Check Auth Status</a></li>
-      <li>
-        <button onclick="logout()">🚪 Logout</button>
-      </li>
-    </ul>
-    <p>Security features enabled: JWT verification, CSRF protection, Role-based access control</p>
-    <p><strong>Note:</strong> Authentication service requires .env configuration with Criipto credentials</p>
-    <script>
-      async function logout() {
-        const csrfToken = localStorage.getItem('csrfToken');
-        await fetch('/api/logout', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': csrfToken
-          }
-        });
-        localStorage.removeItem('csrfToken');
-        window.location.reload();
-      }
-    </script>
-  `);
-});
+// app.get("/", (req: Request, res: Response) => {
+//   res.send(`
+//     <h1>Secure Healthcare Authentication System</h1>
+//     <p>Available endpoints:</p>
+//     <ul>
+//       <li><a href="/api/login">🔐 Login with BankID</a></li>
+//       <li><a href="/api/me">👤 Check Auth Status</a></li>
+//       <li>
+//         <button onclick="logout()">🚪 Logout</button>
+//       </li>
+//     </ul>
+//     <p>Security features enabled: JWT verification, CSRF protection, Role-based access control</p>
+//     <p><strong>Note:</strong> Authentication service requires .env configuration with Criipto credentials</p>
+//     <script>
+//       async function logout() {
+//         const csrfToken = localStorage.getItem('csrfToken');
+//         await fetch('/api/logout', {
+//           method: 'POST',
+//           headers: {
+//             'Content-Type': 'application/json',
+//             'X-CSRF-Token': csrfToken
+//           }
+//         });
+//         localStorage.removeItem('csrfToken');
+//         window.location.reload();
+//       }
+//     </script>
+//   `);
+// });
 
 // Start the server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌟 Server is running at http://localhost:${PORT}`);
+  console.log(`🌟 Server is also accessible at http://192.168.0.101:${PORT}`);
+  console.log(`🌟 Mobile devices can connect using: http://192.168.0.101:${PORT}`);
 });
