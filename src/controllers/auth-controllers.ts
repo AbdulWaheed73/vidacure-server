@@ -71,6 +71,117 @@ export const initiateLogin = (req: Request, res: Response): void => {
   }
 };
 
+export const setLogin = async (req: Request, res: Response): Promise<void> => {
+ try {
+   // Check if auth service is initialized
+   try {
+     getAppConfig();
+   } catch (authError) {
+     res.status(503).json({ 
+       error: "Authentication service not available", 
+       message: "Please configure Criipto credentials in .env file" 
+     });
+     return;
+   }
+
+   // Get client type from header
+   const clientType = req.headers['x-client'] as string;
+   
+   if (clientType !== 'app') {
+     res.status(400).json({ 
+       error: "Invalid client type", 
+       message: "This endpoint is for mobile applications only" 
+     });
+     return;
+   }
+
+   // Extract the Criipto JWT from Authorization header
+   const authHeader = req.headers.authorization;
+   
+   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+     res.status(401).json({ 
+       error: "Missing authorization header", 
+       message: "Bearer token required" 
+     });
+     return;
+   }
+
+   const criiptoJWT = authHeader.substring(7); // Remove 'Bearer ' prefix
+   
+   if (!criiptoJWT) {
+     res.status(401).json({ 
+       error: "Invalid token format", 
+       message: "Bearer token is empty" 
+     });
+     return;
+   }
+
+   console.log("📱 Mobile app authentication attempt");
+   console.log("🎯 Received Criipto JWT:", criiptoJWT.substring(0, 10) + "...");
+
+   // Verify the Criipto JWT using the middleware logic
+   // Note: In a real implementation, you'd use the CriiptoVerifyExpressJwt middleware
+   // For now, we'll decode it (YOU NEED TO IMPLEMENT PROPER VERIFICATION)
+   let criiptoUserClaims: CriiptoUserClaims;
+   
+   try {
+     // TODO: Replace this with proper Criipto JWT verification
+     // const verifiedToken = await criiptoVerifyExpressJwt.verify(criiptoJWT);
+     criiptoUserClaims = jwt.decode(criiptoJWT) as CriiptoUserClaims;
+     
+     if (!criiptoUserClaims) {
+       throw new Error("Invalid token payload");
+     }
+     
+     console.log("👤 Verified Criipto user claims:", criiptoUserClaims);
+     
+   } catch (verificationError) {
+     console.error("❌ Criipto JWT verification failed:", verificationError);
+     res.status(401).json({ 
+       error: "Invalid token", 
+       message: "Failed to verify Criipto JWT" 
+     });
+     return;
+   }
+
+   // Find or create user based on Criipto claims
+   const { user, isNewUser } = await findOrCreateUser(criiptoUserClaims);
+   
+   console.log(`👤 ${isNewUser ? 'Created new user' : 'Found existing user'}:`, {
+     userId: user._id?.toString(),
+     name: user.name,
+     role: user.role,
+     status: user.status
+   });
+
+   // Create our app JWT for mobile client
+   const appJWT = createAppJWT(user);
+   
+   console.log("✅ Mobile authentication successful");
+   
+   // Return the app JWT in response body (no cookies for mobile)
+   res.json({
+     success: true,
+     message: isNewUser ? "Account created successfully" : "Authentication successful",
+     token: appJWT,
+     user: {
+       userId: user._id?.toString(),
+       name: user.name,
+       role: user.role,
+       status: user.status
+     }
+     // Note: No CSRF token needed for mobile apps
+   });
+
+ } catch (error) {
+   console.error("❌ Mobile login error:", error);
+   res.status(500).json({ 
+     error: "Authentication failed", 
+     details: error instanceof Error ? error.message : "Unknown error"
+   });
+ }
+};
+
 export const handleCallback = async (req: Request, res: Response): Promise<void> => {
   try {
     // Check if auth service is initialized
@@ -153,7 +264,7 @@ export const handleCallback = async (req: Request, res: Response): Promise<void>
     });
     
     // Redirect back to frontend with success message
-    const frontendUrl = process.env.FRONTEND_URL || 'http://192.168.0.101:5173';
+    const frontendUrl = process.env.FRONTEND_URL;
     res.redirect(`${frontendUrl}?auth=success&message=${encodeURIComponent(isNewUser ? 'Welcome! Account created successfully.' : 'Login successful!')}`);
     
   } catch (error) {

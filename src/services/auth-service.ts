@@ -5,14 +5,14 @@ import { CriiptoUserClaims, AppUserClaims, BaseUser } from "../types/generic-typ
 
 // Environment variables
 const domain: string = process.env.CRIIPTO_DOMAIN as string;
-const clientId: string = process.env.CRIIPTO_CLIENT_ID as string;
+const clientId_web: string = process.env.CRIIPTO_CLIENT_ID_WEB as string;
 const clientSecret: string = process.env.CRIIPTO_CLIENT_SECRET as string;
 const redirectUri: string = process.env.REDIRECT_URI as string;
 const JWT_SECRET: string = process.env.JWT_SECRET as string;
 const SSN_HASH_SECRET: string = process.env.SSN_HASH_SECRET as string;
 
 // Initialize configuration manager
-const configManager = new OpenIDConfigurationManager(`https://${domain}`, clientId);
+const configManager = new OpenIDConfigurationManager(`https://${domain}`, clientId_web);
 let appConfig: any;
 
 // Utility functions
@@ -101,10 +101,10 @@ export function verifyAppJWT(token: string): AppUserClaims | null {
 export async function initializeAuth(): Promise<void> {
   try {
     // Check if required environment variables are set
-    if (!domain || !clientId || !clientSecret) {
+    if (!domain || !clientId_web || !clientSecret) {
       console.log("⚠️ Environment variables check:");
       console.log("  CRIIPTO_DOMAIN:", domain ? "✅ Set" : "❌ Missing");
-      console.log("  CRIIPTO_CLIENT_ID:", clientId ? "✅ Set" : "❌ Missing");
+      console.log("  CRIIPTO_CLIENT_ID:", clientId_web ? "✅ Set" : "❌ Missing");
       console.log("  CRIIPTO_CLIENT_SECRET:", clientSecret ? "✅ Set" : "❌ Missing");
       throw new Error("Missing required Criipto environment variables");
     }

@@ -29,7 +29,7 @@ JWT_SECRET=your-super-secret-jwt-key-change-in-production
 SSN_HASH_SECRET=your-ssn-hash-secret-change-in-production
 
 # Server Configuration
-PORT=3001
+PORT=3000
 
 # MongoDB Configuration (if needed later)
 MONGODB_URI=mongodb+srv://waheed:waheed12345@cluster0.dnuwlq6.mongodb.net/
