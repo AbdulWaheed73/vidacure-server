@@ -1,4 +1,4 @@
-import express, { Request, Response } from "express";
+import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import databaseConnection from "./utils/database-connection";
@@ -7,6 +7,8 @@ import authRoutes from "./routes/auth-routes";
 import adminRoutes from "./routes/admin-routes";
 import patientRoutes from "./routes/patient-routes";
 import { requireAuth, requireCSRF } from "./middleware/auth-middleware";
+import os from 'os';
+
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "3000", 10);
@@ -27,7 +29,12 @@ const corsOptions = {
     "http://localhost:3000",
     "http://localhost:5173",
     "http://192.168.0.101:3000",
+    "http://192.168.0.103:3000",
+    "http://172.16.21.144:3000",
     "http://192.168.0.101:5173",
+    "http://192.168.0.103:5173",
+    "http://172.16.21.144:5173",
+    "0.0.0.0",
   ], 
   methods: "GET,POST,PUT,DELETE",
   allowedHeaders: "Content-Type, Authorization, x-csrf-token, x-client",
@@ -35,7 +42,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-
 app.use(express.json());
 app.use(cookieParser());
 
@@ -56,14 +62,21 @@ initializeAuth()
 
 // Parent Routes
 app.use("/api", authRoutes);
-app.use("/api/admin", requireAuth, requireCSRF, adminRoutes);
 app.use("/patient", requireAuth, requireCSRF, patientRoutes);
 
-// Start the server
+// After your app.listen(), add this:
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🌟 Server is running at http://localhost:${PORT}`);
-  console.log(`🌟 Server is also accessible at http://192.168.0.101:${PORT}`);
-  console.log(
-    `🌟 Mobile devices can connect using: http://192.168.0.101:${PORT}`
-  );
+  console.log(`🌟 Server is running on port ${PORT}`);
+  
+  const interfaces = os.networkInterfaces();
+  console.log('\n📡 Server accessible at:');
+  console.log(`   http://localhost:${PORT}`);
+  
+  Object.keys(interfaces).forEach((interfaceName) => {
+    interfaces[interfaceName]?.forEach((iface) => {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        console.log(`   http://${iface.address}:${PORT} (${interfaceName})`);
+      }
+    });
+  });
 });

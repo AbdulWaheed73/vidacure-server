@@ -2,6 +2,9 @@ import { OpenIDConfigurationManager, buildAuthorizeURL, codeExchange } from "@cr
 import jwt, { JwtPayload } from "jsonwebtoken";
 import crypto from "crypto";
 import { CriiptoUserClaims, AppUserClaims, BaseUser } from "../types/generic-types";
+import User from "../schemas/user-schema";
+import { UserT } from "../types/user-type";
+import Patient from "../schemas/patient-schema";
 
 // Environment variables
 const domain: string = process.env.CRIIPTO_DOMAIN as string;
@@ -39,7 +42,7 @@ export function generateRandomState(): string {
   return crypto.randomBytes(16).toString('hex');
 }
 
-export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise<{ user: BaseUser, isNewUser: boolean }> {
+export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise<{ user: UserT, isNewUser: boolean }> {
   const { ssn, name, given_name, family_name } = criiptoToken;
   
   if (!ssn || !isValidSwedishSSN(ssn)) {
@@ -48,37 +51,83 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
   
   const ssnHash = hashSSN(ssn);
   
-  // For now, we'll just create a user object and print it
-  // You'll handle the actual database storage
-  const user: BaseUser = {
-    ssnHash,
-    name: name || '',
-    given_name: given_name || '',
-    family_name: family_name || '',
-    role: 'patient',
-    status: 'active',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    lastLogin: new Date()
-  };
-  
-  // Print the user data for you to handle storage
-  console.log("🔐 Authentication successful! User data received:");
-  console.log("📋 User Details:", {
-    ssnHash: user.ssnHash,
-    name: user.name,
-    given_name: user.given_name,
-    family_name: user.family_name,
-    role: user.role,
-    status: user.status,
-    createdAt: user.createdAt,
-    lastLogin: user.lastLogin
-  });
-  
-  return { user, isNewUser: true };
+  try {
+    // First, try to find existing user by SSN hash
+    let existingUser = await User.findOne({ ssnHash, status: 'active' });
+    
+    if (existingUser) {
+      // Update last login timestamp
+      existingUser.lastLogin = new Date();
+      await existingUser.save();
+      
+      console.log("🔐 Existing user authenticated:", {
+        userId: existingUser._id?.toString(),
+        name: existingUser.name,
+        role: existingUser.role,
+        lastLogin: existingUser.lastLogin
+      });
+      
+      return { user: existingUser, isNewUser: false };
+    }
+    
+    // User doesn't exist, create new user
+    const newUser = new User({
+      ssnHash,
+      name: name || `${given_name} ${family_name}`.trim() || 'Unknown User',
+      given_name: given_name || '',
+      family_name: family_name || '',
+      role: 'patient',
+      status: 'active',
+      lastLogin: new Date()
+    });
+    
+    const savedUser = await newUser.save();
+    
+    console.log("🆕 New user created and authenticated:", {
+      userId: savedUser._id?.toString(),
+      name: savedUser.name,
+      role: savedUser.role,
+      ssnHash: savedUser.ssnHash,
+      createdAt: savedUser.createdAt
+    });
+    
+    return { user: savedUser, isNewUser: true };
+    
+  } catch (error) {
+    console.error("❌ Error in findOrCreateUser:", error);
+    throw new Error(`Failed to authenticate user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
-export function createAppJWT(user: BaseUser): string {
+export async function ensurePatientProfile(user: UserT): Promise<void> {
+  try {
+    // Check if patient profile already exists
+    const existingPatient = await Patient.findOne({ user: user._id });
+    
+    if (!existingPatient && user.role === 'patient') {
+      console.log("📝 Creating patient profile for user:", user._id?.toString());
+      
+      // Create a basic patient profile
+      const newPatient = new Patient({
+        user: user._id,
+        email: '', // This should be filled in by the patient during onboarding
+        dateOfBirth: new Date(), // This should be filled in by the patient during onboarding
+        gender: 'other', // This should be filled in by the patient during onboarding
+        height: 0, // This should be filled in by the patient during onboarding
+        weightHistory: [],
+        questionnaire: []
+      });
+      
+      await newPatient.save();
+      console.log("✅ Patient profile created successfully");
+    }
+  } catch (error) {
+    console.error("❌ Error creating patient profile:", error);
+    // Don't throw error - patient profile creation is optional at this stage
+  }
+}
+
+export function createAppJWT(user: UserT | BaseUser): string {
   const payload: AppUserClaims = {
     userId: user._id?.toString() || 'temp-id',
     role: user.role,

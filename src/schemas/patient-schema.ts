@@ -3,8 +3,7 @@ import { PatientT } from "../types/patient-type";
 
 const PatientSchema: Schema = new Schema(
   {
-    ssn: { type: String, required: true, unique: true },
-    name: { type: String, required: true },
+    user: { type: Types.ObjectId, ref: "User", required: true, unique: true },
     dateOfBirth: { type: Date, required: true },
     gender: { type: String, enum: ["male", "female", "other"], required: true },
     email: { type: String, required: true, unique: true },

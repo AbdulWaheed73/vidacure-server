@@ -1,8 +1,7 @@
 import { Types } from "mongoose";
 
 export type PatientT = {
-  ssn: string;
-  name: string;
+  user: Types.ObjectId; // ref: User
   dateOfBirth: Date;
   gender: "male" | "female" | "other";
   email: string;

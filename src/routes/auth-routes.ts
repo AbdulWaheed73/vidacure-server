@@ -16,17 +16,18 @@ const expressJwt = new CriiptoVerifyExpressJwt({
 
 const router = express.Router();
 
-// Authentication routes
+// auth api endpoint for web 
 router.get("/login", initiateLogin);
-router.get("/login/check",requireAuth, () => {
-  console.log("object::::");
-} )
-
 // api endpoint for mobile apps to login 
 router.post("/login", expressJwt.middleware(), setLogin);
+
 router.get("/callback", handleCallback);
 router.post("/callback", handleCallback);
 router.get("/me", requireAuth, requireCSRF, getCurrentUser);
 router.post("/logout", logout);
+
+router.get("/login/check",requireAuth, () => {
+  console.log("object::::");
+} )
 
 export default router;
