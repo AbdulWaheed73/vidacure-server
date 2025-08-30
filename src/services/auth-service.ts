@@ -2,9 +2,10 @@ import { OpenIDConfigurationManager, buildAuthorizeURL, codeExchange } from "@cr
 import jwt, { JwtPayload } from "jsonwebtoken";
 import crypto from "crypto";
 import { CriiptoUserClaims, AppUserClaims, BaseUser } from "../types/generic-types";
-import User from "../schemas/user-schema";
-import { UserT } from "../types/user-type";
 import Patient from "../schemas/patient-schema";
+import Doctor from "../schemas/doctor-schema";
+import { PatientT } from "../types/patient-type";
+import { DoctorT } from "../types/doctor-type";
 
 // Environment variables
 const domain: string = process.env.CRIIPTO_DOMAIN as string;
@@ -42,7 +43,7 @@ export function generateRandomState(): string {
   return crypto.randomBytes(16).toString('hex');
 }
 
-export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise<{ user: UserT, isNewUser: boolean }> {
+export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise<{ user: PatientT | DoctorT, isNewUser: boolean }> {
   const { ssn, name, given_name, family_name } = criiptoToken;
   
   if (!ssn || !isValidSwedishSSN(ssn)) {
@@ -52,46 +53,65 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
   const ssnHash = hashSSN(ssn);
   
   try {
-    // First, try to find existing user by SSN hash
-    let existingUser = await User.findOne({ ssnHash, status: 'active' });
+    // First, try to find existing patient by SSN hash
+    let existingPatient = await Patient.findOne({ ssnHash });
     
-    if (existingUser) {
+    if (existingPatient) {
       // Update last login timestamp
-      existingUser.lastLogin = new Date();
-      await existingUser.save();
+      existingPatient.lastLogin = new Date();
+      await existingPatient.save();
       
-      console.log("🔐 Existing user authenticated:", {
-        userId: existingUser._id?.toString(),
-        name: existingUser.name,
-        role: existingUser.role,
-        lastLogin: existingUser.lastLogin
+      console.log("🔐 Existing patient authenticated:", {
+        userId: existingPatient._id?.toString(),
+        name: existingPatient.name,
+        role: existingPatient.role,
+        lastLogin: existingPatient.lastLogin
       });
       
-      return { user: existingUser, isNewUser: false };
+      return { user: existingPatient, isNewUser: false };
     }
     
-    // User doesn't exist, create new user
-    const newUser = new User({
+    // Try to find existing doctor by SSN hash
+    let existingDoctor = await Doctor.findOne({ ssnHash });
+    
+    if (existingDoctor) {
+      // Update last login timestamp
+      existingDoctor.lastLogin = new Date();
+      await existingDoctor.save();
+      
+      console.log("🔐 Existing doctor authenticated:", {
+        userId: existingDoctor._id?.toString(),
+        name: existingDoctor.name,
+        role: existingDoctor.role,
+        lastLogin: existingDoctor.lastLogin
+      });
+      
+      return { user: existingDoctor, isNewUser: false };
+    }
+    
+    // User doesn't exist, create new patient (default role)
+    const newPatient = new Patient({
       ssnHash,
       name: name || `${given_name} ${family_name}`.trim() || 'Unknown User',
       given_name: given_name || '',
       family_name: family_name || '',
       role: 'patient',
-      status: 'active',
-      lastLogin: new Date()
+      lastLogin: new Date(),
+      weightHistory: [],
+      questionnaire: []
     });
     
-    const savedUser = await newUser.save();
+    const savedPatient = await newPatient.save();
     
-    console.log("🆕 New user created and authenticated:", {
-      userId: savedUser._id?.toString(),
-      name: savedUser.name,
-      role: savedUser.role,
-      ssnHash: savedUser.ssnHash,
-      createdAt: savedUser.createdAt
+    console.log("🆕 New patient created and authenticated:", {
+      userId: savedPatient._id?.toString(),
+      name: savedPatient.name,
+      role: savedPatient.role,
+      ssnHash: savedPatient.ssnHash,
+      createdAt: savedPatient.createdAt
     });
     
-    return { user: savedUser, isNewUser: true };
+    return { user: savedPatient, isNewUser: true };
     
   } catch (error) {
     console.error("❌ Error in findOrCreateUser:", error);
@@ -99,35 +119,9 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
   }
 }
 
-export async function ensurePatientProfile(user: UserT): Promise<void> {
-  try {
-    // Check if patient profile already exists
-    const existingPatient = await Patient.findOne({ user: user._id });
-    
-    if (!existingPatient && user.role === 'patient') {
-      console.log("📝 Creating patient profile for user:", user._id?.toString());
-      
-      // Create a basic patient profile
-      const newPatient = new Patient({
-        user: user._id,
-        email: '', // This should be filled in by the patient during onboarding
-        dateOfBirth: new Date(), // This should be filled in by the patient during onboarding
-        gender: 'other', // This should be filled in by the patient during onboarding
-        height: 0, // This should be filled in by the patient during onboarding
-        weightHistory: [],
-        questionnaire: []
-      });
-      
-      await newPatient.save();
-      console.log("✅ Patient profile created successfully");
-    }
-  } catch (error) {
-    console.error("❌ Error creating patient profile:", error);
-    // Don't throw error - patient profile creation is optional at this stage
-  }
-}
+// ensurePatientProfile function removed - patients are created directly now
 
-export function createAppJWT(user: UserT | BaseUser): string {
+export function createAppJWT(user: PatientT | DoctorT | BaseUser): string {
   const payload: AppUserClaims = {
     userId: user._id?.toString() || 'temp-id',
     role: user.role,

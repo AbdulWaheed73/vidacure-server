@@ -1,15 +1,19 @@
 import { Router } from "express";
-import { getAllPatients } from "../controllers/patient-controllers";
-
+import { 
+  getAllPatients, 
+  submitQuestionnaire, 
+  getQuestionnaire, 
+  updateQuestionnaire 
+} from "../controllers/patient-controllers";
 
 const router = Router();
 
-// router.post("/", createOwner);
-// router.get("/:id", getOwnerById); 
+// Patient management routes
 router.get("/", getAllPatients);
-// router.delete("/:id", deleteOwner); 
-// router.patch("/:id", updateOwner);
 
-
+// Questionnaire routes
+router.post("/questionnaire", submitQuestionnaire);
+router.get("/questionnaire", getQuestionnaire);
+router.patch("/questionnaire", updateQuestionnaire);
 
 export default router;

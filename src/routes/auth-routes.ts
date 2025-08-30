@@ -23,7 +23,7 @@ router.post("/login", expressJwt.middleware(), setLogin);
 
 router.get("/callback", handleCallback);
 router.post("/callback", handleCallback);
-router.get("/me", requireAuth, requireCSRF, getCurrentUser);
+router.get("/me", requireAuth, getCurrentUser);
 router.post("/logout", logout);
 
 router.get("/login/check",requireAuth, () => {

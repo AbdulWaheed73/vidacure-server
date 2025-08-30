@@ -1,9 +1,9 @@
 import { JwtPayload } from "jsonwebtoken";
 import { ObjectId } from "mongodb";
-import { Request, Response, NextFunction } from "express";
+import { Request } from "express";
 
 // Criipto OIDC related types
-export interface CriiptoUserClaims extends JwtPayload {
+export type CriiptoUserClaims = JwtPayload & {
   sub?: string;
   email?: string;
   name?: string;
@@ -13,32 +13,31 @@ export interface CriiptoUserClaims extends JwtPayload {
 }
 
 // Application JWT types
-export interface AppUserClaims extends JwtPayload {
+export type AppUserClaims = JwtPayload & {
   userId: string;
   role: string;
 }
 
 // Request with authenticated user
-export interface AuthenticatedRequest extends Request {
+export type AuthenticatedRequest = Request & {
   user?: AppUserClaims;
 }
 
-// Base user interface
-export interface BaseUser {
+// Base user type
+export type BaseUser = {
   _id?: ObjectId;
   ssnHash: string;
   name: string;
   given_name: string;
   family_name: string;
-  role: 'patient' | 'doctor' | 'superadmin';
-  status: 'active' | 'inactive' | 'pending';
+  role: 'patient' | 'doctor';
   createdAt: Date;
   updatedAt: Date;
   lastLogin?: Date;
 }
 
-// Audit log interface
-export interface AuditLog {
+// Audit log type
+export type AuditLog = {
   timestamp: Date;
   action: string;
   userId?: string;
@@ -47,8 +46,8 @@ export interface AuditLog {
   userAgent?: string;
 }
 
-// CSRF token interface
-export interface CSRFToken {
+// CSRF token type
+export type CSRFToken = {
   userId: string;
   token: string;
   createdAt: Date;

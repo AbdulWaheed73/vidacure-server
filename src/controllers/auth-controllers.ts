@@ -10,10 +10,10 @@ import {
   getAppConfig,
   getRedirectUri,
   getClientSecret,
-  ensurePatientProfile,
 } from "../services/auth-service";
 import { CriiptoUserClaims } from "../types/generic-types";
-import User from "../schemas/user-schema";
+import Patient from "../schemas/patient-schema";
+import Doctor from "../schemas/doctor-schema";
 
 import { browserDetails } from "../middleware/auth-middleware";
 
@@ -129,16 +129,12 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
     // Find or create user based on Criipto claims
     const { user, isNewUser } = await findOrCreateUser(criiptoUserClaims);
 
-    // Ensure patient profile exists if user is a patient
-    await ensurePatientProfile(user);
-
     console.log(
       `👤 ${isNewUser ? "Created new user" : "Found existing user"}:`,
       {
         userId: user._id?.toString(),
         name: user.name,
         role: user.role,
-        status: user.status,
       }
     );
 
@@ -158,7 +154,6 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
         userId: user._id?.toString(),
         name: user.name,
         role: user.role,
-        status: user.status,
       },
       // Note: No CSRF token needed for mobile apps
     });
@@ -241,9 +236,6 @@ export const handleCallback = async (
     // Find or create user based on SSN
     const { user, isNewUser } = await findOrCreateUser(criiptoToken);
 
-    // Ensure patient profile exists if user is a patient
-    await ensurePatientProfile(user);
-
     // Create our own app JWT
     const appJWT = createAppJWT(user);
 
@@ -258,11 +250,11 @@ export const handleCallback = async (
     });
 
     // Store CSRF token in a non-httpOnly cookie so frontend can access it
-    res.cookie("csrf_token", csrfToken, {
-      httpOnly: false, // Allow frontend to read this
-      secure: Boolean(process.env.SECURE), // Set to true in production with HTTPS
-      maxAge: Number(process.env.TTL), // 30 minutes
-    });
+    // res.cookie("csrf_token", csrfToken, {
+    //   httpOnly: false, // Allow frontend to read this
+    //   secure: Boolean(process.env.SECURE), // Set to true in production with HTTPS
+    //   maxAge: Number(process.env.TTL), // 30 minutes
+    // });
 
     // Redirect back to frontend with success message
     const frontendUrl = process.env.FRONTEND_URL;
@@ -305,8 +297,12 @@ export const getCurrentUser = async (
       return;
     }
 
-    // Fetch user data from database
-    const user = await User.findById(decodedToken.userId);
+    // Fetch user data from database (try Patient first, then Doctor)
+    let user = await Patient.findById(decodedToken.userId);
+    
+    if (!user) {
+      user = await Doctor.findById(decodedToken.userId);
+    }
 
     if (!user) {
       res.status(401).json({
@@ -324,9 +320,9 @@ export const getCurrentUser = async (
       given_name: user.given_name,
       family_name: user.family_name,
       role: user.role,
-      status: user.status,
       userId: user._id?.toString(),
       lastLogin: user.lastLogin,
+      hasCompletedOnboarding: user.hasCompletedOnboarding || false,
     };
 
     res.json({

@@ -1,20 +1,29 @@
 import { Types } from "mongoose";
 
 export type PatientT = {
-  user: Types.ObjectId; // ref: User
-  dateOfBirth: Date;
-  gender: "male" | "female" | "other";
-  email: string;
+  _id?: Types.ObjectId;
+  // Common authentication fields
+  ssnHash: string;
+  name: string;
+  given_name: string;
+  family_name: string;
+  role: "patient";
+  lastLogin?: Date;
+  
+  // Patient-specific fields
+  dateOfBirth?: Date;
+  gender?: "male" | "female" | "other";
+  email?: string;
 
   weightHistory: {
     weight: number;
     date: Date;
   }[];
 
-  height: number;
-  bmi: number;
+  height?: number;
+  bmi?: number;
 
-  doctor: Types.ObjectId; // ref: Doctor
+  doctor?: Types.ObjectId; // ref: Doctor
 
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
@@ -23,6 +32,8 @@ export type PatientT = {
     questionId: string;
     answer: string;
   }[];
+
+  hasCompletedOnboarding?: boolean;
 
   prescription?: {
     doctor: Types.ObjectId; // ref: Doctor
