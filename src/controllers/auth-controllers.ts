@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { AuthenticatedRequest } from "../types/generic-types";
 import jwt from "jsonwebtoken";
 import { codeExchange, buildAuthorizeURL } from "@criipto/oidc";
 import {
@@ -6,7 +7,6 @@ import {
   createAppJWT,
   generateRandomState,
   generateCSRFToken,
-  verifyAppJWT,
   getAppConfig,
   getRedirectUri,
   getClientSecret,
@@ -250,11 +250,11 @@ export const handleCallback = async (
     });
 
     // Store CSRF token in a non-httpOnly cookie so frontend can access it
-    // res.cookie("csrf_token", csrfToken, {
-    //   httpOnly: false, // Allow frontend to read this
-    //   secure: Boolean(process.env.SECURE), // Set to true in production with HTTPS
-    //   maxAge: Number(process.env.TTL), // 30 minutes
-    // });
+    res.cookie("csrf_token", csrfToken, {
+      httpOnly: false, // Allow frontend to read this
+      secure: Boolean(process.env.SECURE), // Set to true in production with HTTPS
+      maxAge: Number(process.env.TTL), // 30 minutes
+    });
 
     // Redirect back to frontend with success message
     const frontendUrl = process.env.FRONTEND_URL;
@@ -271,37 +271,18 @@ export const handleCallback = async (
 };
 
 export const getCurrentUser = async (
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response
 ): Promise<void> => {
   try {
-    // Get user data from the JWT token in the cookie
-    const appToken = req.cookies.app_token;
-
-    if (!appToken) {
-      res.status(401).json({
-        authenticated: false,
-        message: "No authentication token found",
-      });
-      return;
-    }
-
-    // Verify the JWT token
-    const decodedToken = verifyAppJWT(appToken);
-
-    if (!decodedToken) {
-      res.status(401).json({
-        authenticated: false,
-        message: "Invalid or expired token",
-      });
-      return;
-    }
+    // req.user is guaranteed to exist due to requireAuth middleware
+    const userId = req.user!.userId;
 
     // Fetch user data from database (try Patient first, then Doctor)
-    let user = await Patient.findById(decodedToken.userId);
+    let user = await Patient.findById(userId);
     
     if (!user) {
-      user = await Doctor.findById(decodedToken.userId);
+      user = await Doctor.findById(userId);
     }
 
     if (!user) {

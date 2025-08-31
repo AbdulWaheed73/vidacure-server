@@ -134,8 +134,21 @@ export function createAppJWT(user: PatientT | DoctorT | BaseUser): string {
 
 export function verifyAppJWT(token: string): AppUserClaims | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as AppUserClaims;
+    console.log('🔐 Verifying JWT token...');
+    console.log('🔍 JWT_SECRET available:', !!JWT_SECRET);
+    console.log('🔍 Token format valid:', token.split('.').length === 3);
+    
+    const decoded = jwt.verify(token, JWT_SECRET) as AppUserClaims;
+  
+    
+    return decoded;
   } catch (error) {
+    console.log('❌ JWT verification failed:', error instanceof Error ? error.message : 'Unknown error');
+    if (error instanceof jwt.TokenExpiredError) {
+      console.log('🕒 Token is expired');
+    } else if (error instanceof jwt.JsonWebTokenError) {
+      console.log('🔍 Invalid token format or signature');
+    }
     return null;
   }
 }

@@ -17,11 +17,8 @@ export const submitQuestionnaire = async (req: AuthenticatedRequest, res: Respon
   try {
     const { questionnaire } = req.body;
     const userId = req.user?.userId;
+    console.log("user ID: ", userId);
 
-    if (!userId) {
-      res.status(401).json({ error: "User not authenticated" });
-      return;
-    }
 
     if (!questionnaire || !Array.isArray(questionnaire)) {
       res.status(400).json({ error: "Invalid questionnaire format" });
@@ -52,12 +49,17 @@ export const submitQuestionnaire = async (req: AuthenticatedRequest, res: Respon
     // Mark onboarding as completed when questionnaire is submitted
     patient.hasCompletedOnboarding = true;
     
-    await patient.save();
-
-    res.status(200).json({ 
-      message: "Questionnaire submitted successfully",
-      questionnaire: patient.questionnaire 
-    });
+    // Save patient and send response
+    try {
+      await patient.save();
+      res.status(200).json({ 
+        message: "Questionnaire submitted successfully",
+        questionnaire: patient.questionnaire 
+      });
+    } catch (saveError) {
+      console.error("Error saving patient questionnaire:", saveError);
+      res.status(500).json({ error: "Error saving questionnaire" });
+    }
   } catch (error) {
     console.error("Error submitting questionnaire:", error);
     res.status(500).json({ error: "Error submitting questionnaire" });

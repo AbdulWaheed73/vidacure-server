@@ -26,8 +26,21 @@ router.post("/callback", handleCallback);
 router.get("/me", requireAuth, getCurrentUser);
 router.post("/logout", logout);
 
-router.get("/login/check",requireAuth, () => {
-  console.log("object::::");
-} )
+router.get("/login/check", requireAuth, getCurrentUser)
+
+// Health check endpoint for network connectivity testing
+router.get("/health", (req, res) => {
+  res.json({
+    status: "OK",
+    message: "Server is running",
+    timestamp: new Date().toISOString(),
+    server: {
+      node: process.version,
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+    },
+    headers: req.headers,
+  });
+});
 
 export default router;
