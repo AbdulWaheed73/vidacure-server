@@ -40,6 +40,18 @@ const PatientSchema: Schema = new Schema(
 
     stripeCustomerId: { type: String },
     stripeSubscriptionId: { type: String },
+    subscriptionStatus: { 
+      type: String, 
+      enum: ["active", "canceled", "incomplete", "incomplete_expired", "past_due", "trialing", "unpaid"], 
+      default: null 
+    },
+    subscriptionPlanType: { 
+      type: String, 
+      enum: ["lifestyle", "medical"], 
+      default: null 
+    },
+    subscriptionStartDate: { type: Date },
+    subscriptionEndDate: { type: Date },
 
     questionnaire: [
       {

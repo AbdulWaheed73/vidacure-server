@@ -6,6 +6,7 @@ import { initializeAuth } from "./services/auth-service";
 import authRoutes from "./routes/auth-routes";
 import adminRoutes from "./routes/admin-routes";
 import patientRoutes from "./routes/patient-routes";
+import paymentRoutes from "./routes/payment-routes";
 import { requireAuth, requireCSRF } from "./middleware/auth-middleware";
 import os from 'os';
 
@@ -44,6 +45,9 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -64,6 +68,7 @@ initializeAuth()
 
 // Parent Routes
 app.use("/api", authRoutes);
+app.use("/api/payment", paymentRoutes);
 app.use("/patient", requireAuth, requireCSRF, patientRoutes);
 
 // After your app.listen(), add this:

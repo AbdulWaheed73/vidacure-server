@@ -40,9 +40,11 @@
   "dependencies": {
     "@criipto/oidc": "^1.0.0",
     "@criipto/verify-express": "^1.0.4",
+    "@types/stripe": "^8.0.416",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.17.1"
+    "mongoose": "^8.17.1",
+    "stripe": "^18.5.0"
   }
 }

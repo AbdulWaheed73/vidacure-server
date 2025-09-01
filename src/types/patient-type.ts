@@ -27,6 +27,10 @@ export type PatientT = {
 
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  subscriptionStatus?: "active" | "canceled" | "incomplete" | "incomplete_expired" | "past_due" | "trialing" | "unpaid";
+  subscriptionPlanType?: "lifestyle" | "medical";
+  subscriptionStartDate?: Date;
+  subscriptionEndDate?: Date;
 
   questionnaire: {
     questionId: string;
