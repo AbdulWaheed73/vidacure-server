@@ -16,6 +16,41 @@ export const stripeService = {
     });
   },
 
+  createPaymentIntent: async (params: {
+    amount: number;
+    currency: string;
+    customerId?: string;
+    metadata?: Record<string, string>;
+    setup_future_usage?: 'off_session' | 'on_session';
+  }) => {
+    const { amount, currency, customerId, metadata, setup_future_usage } = params;
+    
+    return await stripe.paymentIntents.create({
+      amount,
+      currency,
+      customer: customerId,
+      metadata,
+      setup_future_usage,
+      automatic_payment_methods: {
+        enabled: true,
+      },
+    });
+  },
+
+  createSetupIntent: async (params: {
+    customerId: string;
+    metadata?: Record<string, string>;
+  }) => {
+    const { customerId, metadata } = params;
+    
+    return await stripe.setupIntents.create({
+      customer: customerId,
+      payment_method_types: ['card'],
+      usage: 'off_session',
+      metadata,
+    });
+  },
+
   createCheckoutSession: async (params: {
     customerId?: string;
     customerEmail?: string;
@@ -124,6 +159,75 @@ export const stripeService = {
 
   updateCustomer: async (customerId: string, params: Stripe.CustomerUpdateParams) => {
     return await stripe.customers.update(customerId, params);
+  },
+
+  createSubscription: async (params: {
+    customerId: string;
+    planType: 'lifestyle' | 'medical';
+    paymentMethodId?: string;
+    metadata?: Record<string, string>;
+  }) => {
+    const { customerId, planType, paymentMethodId, metadata } = params;
+
+    let priceData: {
+      currency: string;
+      unit_amount: number;
+      recurring: { interval: 'month' };
+      product_data: { name: string; description: string };
+    };
+    
+    if (planType === 'lifestyle') {
+      priceData = {
+        currency: 'sek',
+        unit_amount: 79500, // 795 SEK in öre
+        recurring: { interval: 'month' },
+        product_data: {
+          name: 'Lifestyle Program Membership',
+          description: 'Your access to expert coaching and support for a healthier lifestyle.',
+        },
+      };
+    } else if (planType === 'medical') {
+      priceData = {
+        currency: 'sek',
+        unit_amount: 149500, // 1495 SEK in öre
+        recurring: { interval: 'month' },
+        product_data: {
+          name: 'Medical Program Membership',
+          description: 'Your all-in-one access to our medical team, coaching, and support.',
+        },
+      };
+    } else {
+      throw new Error('Invalid plan type');
+    }
+
+    // Create a price for the subscription
+    const price = await stripe.prices.create(priceData);
+
+    const subscriptionParams: Stripe.SubscriptionCreateParams = {
+      customer: customerId,
+      items: [{ price: price.id }],
+      metadata: {
+        planType,
+        ...metadata,
+      },
+      expand: ['latest_invoice.payment_intent'],
+    };
+
+    if (paymentMethodId) {
+      subscriptionParams.default_payment_method = paymentMethodId;
+    }
+
+    return await stripe.subscriptions.create(subscriptionParams);
+  },
+
+  retrievePaymentMethod: async (paymentMethodId: string) => {
+    return await stripe.paymentMethods.retrieve(paymentMethodId);
+  },
+
+  attachPaymentMethodToCustomer: async (paymentMethodId: string, customerId: string) => {
+    return await stripe.paymentMethods.attach(paymentMethodId, {
+      customer: customerId,
+    });
   },
 };
 

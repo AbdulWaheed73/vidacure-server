@@ -2,6 +2,8 @@ import express from "express";
 import Stripe from 'stripe';
 import stripeService from "../services/stripe-service";
 import { 
+  createPaymentIntent,
+  createSetupIntent,
   createCheckoutSession,
   getSubscriptionStatus,
   cancelSubscription,
@@ -9,11 +11,17 @@ import {
   handleSuccessfulPayment,
   handleFailedPayment,
   handleSubscriptionUpdate,
-  handleSubscriptionDeleted
+  handleSubscriptionDeleted,
+  handlePaymentIntentSucceeded,
+  handleSetupIntentSucceeded
 } from "../controllers/payment-controllers";
 import { requireAuth, requireCSRF } from "../middleware/auth-middleware";
 
 const router = express.Router();
+
+router.post("/create-payment-intent", requireAuth, requireCSRF, createPaymentIntent);
+
+router.post("/create-setup-intent", requireAuth, requireCSRF, createSetupIntent);
 
 router.post("/create-checkout-session", requireAuth, requireCSRF, createCheckoutSession);
 
@@ -48,6 +56,18 @@ router.post("/webhook", express.raw({ type: 'application/json' }), async (req: e
       case 'checkout.session.expired': {
         const session = event.data.object;
         await handleFailedPayment(session);
+        break;
+      }
+
+      case 'payment_intent.succeeded': {
+        const paymentIntent = event.data.object;
+        await handlePaymentIntentSucceeded(paymentIntent);
+        break;
+      }
+
+      case 'setup_intent.succeeded': {
+        const setupIntent = event.data.object;
+        await handleSetupIntentSucceeded(setupIntent);
         break;
       }
 
