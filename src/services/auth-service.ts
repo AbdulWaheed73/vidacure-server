@@ -1,5 +1,5 @@
-import { OpenIDConfigurationManager, buildAuthorizeURL, codeExchange } from "@criipto/oidc";
-import jwt, { JwtPayload } from "jsonwebtoken";
+import { OpenIDConfigurationManager } from "@criipto/oidc";
+import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { CriiptoUserClaims, AppUserClaims, BaseUser } from "../types/generic-types";
 import Patient from "../schemas/patient-schema";
@@ -54,7 +54,7 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
   
   try {
     // First, try to find existing patient by SSN hash
-    let existingPatient = await Patient.findOne({ ssnHash });
+    const existingPatient = await Patient.findOne({ ssnHash });
     
     if (existingPatient) {
       // Update last login timestamp
@@ -72,7 +72,7 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
     }
     
     // Try to find existing doctor by SSN hash
-    let existingDoctor = await Doctor.findOne({ ssnHash });
+    const existingDoctor = await Doctor.findOne({ ssnHash });
     
     if (existingDoctor) {
       // Update last login timestamp

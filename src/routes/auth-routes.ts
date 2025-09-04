@@ -6,7 +6,7 @@ import {
   logout,
   setLogin,
 } from "../controllers/auth-controllers";
-import { requireAuth, requireCSRF } from "../middleware/auth-middleware";
+import { requireAuth } from "../middleware/auth-middleware";
 import { CriiptoVerifyExpressJwt } from "@criipto/verify-express";
 
 const expressJwt = new CriiptoVerifyExpressJwt({

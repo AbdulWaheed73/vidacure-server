@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { AuthenticatedRequest } from "../types/generic-types";
 import jwt from "jsonwebtoken";
 import { codeExchange, buildAuthorizeURL } from "@criipto/oidc";
+import { ErrorResponse } from "@criipto/oidc/dist/response";
 import {
   findOrCreateUser,
   createAppJWT,
@@ -66,7 +67,7 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
   try {
     try {
       getAppConfig();
-    } catch (authError) {
+    } catch {
       res.status(503).json({
         error: "Authentication service not available",
         message: "Please configure Criipto credentials in .env file",
@@ -174,7 +175,7 @@ export const handleCallback = async (
     // Check if auth service is initialized
     try {
       getAppConfig();
-    } catch (authError) {
+    } catch {
       res.status(503).json({
         error: "Authentication service not available",
         message: "Please configure Criipto credentials in .env file",
@@ -218,15 +219,22 @@ export const handleCallback = async (
     );
 
     // Exchange code for tokens
-    const tokens: any = await codeExchange(getAppConfig(), {
+    const tokens: { id_token: string; access_token: string } | ErrorResponse = await codeExchange(getAppConfig(), {
       code,
       redirect_uri: getRedirectUri(req),
       client_secret: getClientSecret(),
     });
 
+    // Check if token exchange was successful
+    if ('error' in tokens) {
+      console.error("❌ Token exchange failed:", tokens.error);
+      res.status(400).json({ error: "Token exchange failed", details: tokens.error });
+      return;
+    }
+
     console.log("🎯 Token exchange successful");
 
-    const idToken: string = tokens.id_token!;
+    const idToken: string = tokens.id_token;
 
     // TODO: In production, verify JWT signature with Criipto's public keys
     // For now, just decode (THIS IS NOT SECURE - IMPLEMENT VERIFICATION)
@@ -318,12 +326,12 @@ export const getCurrentUser = async (
   }
 };
 
-export const logout = (req: Request, res: Response): void => {
+export const logout = (_req: Request, res: Response): void => {
   try {
     res.clearCookie("app_token");
     res.clearCookie("csrf_token");
     res.json({ success: true, message: "Logged out successfully" });
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: "Failed to logout" });
   }
 };

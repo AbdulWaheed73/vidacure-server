@@ -12,7 +12,7 @@ router.get("/users", requireAuth, requireRole(['superadmin']), (req, res) => {
       message: "Admin access granted",
       users: [] // You'll populate this with actual user data
     });
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: "Failed to fetch users" });
   }
 });

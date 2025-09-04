@@ -1,11 +1,10 @@
 import { Response, NextFunction } from "express";
 import { verifyAppJWT } from "../services/auth-service";
 import { AuthenticatedRequest } from "../types/generic-types";
-import { error } from "console";
+
 
 export function browserDetails(
   req: AuthenticatedRequest,
-  res: Response
 ): "web" | "mobile" | "app" {
   // First check the x-client header
   const clientToken = req.headers["x-client"] as string;
@@ -45,7 +44,7 @@ export function requireAuth(
   let token: string | undefined;
 
   // Determine client type
-  const clientType = browserDetails(req, res);
+  const clientType = browserDetails(req);
   console.log("🔍 Client type detected in requireAuth:", clientType);
   console.log("🔍 Request headers - x-client:", req.headers["x-client"]);
   console.log(
@@ -117,7 +116,7 @@ export async function requireCSRF(
 ): Promise<void> {
   const clientToken = req.headers["x-csrf-token"] as string;
   const csrf = req.cookies?.csrf_token as string;
-  const clientType = browserDetails(req, res);
+  const clientType = browserDetails(req);
   // console.log("csrf client token: ",clientToken);
   if (clientType === "app") {
     next();

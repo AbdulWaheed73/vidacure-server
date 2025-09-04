@@ -4,7 +4,7 @@ import cookieParser from "cookie-parser";
 import databaseConnection from "./utils/database-connection";
 import { initializeAuth } from "./services/auth-service";
 import authRoutes from "./routes/auth-routes";
-import adminRoutes from "./routes/admin-routes";
+// import adminRoutes from "./routes/admin-routes";
 import patientRoutes from "./routes/patient-routes";
 import paymentRoutes from "./routes/payment-routes";
 import { requireAuth, requireCSRF } from "./middleware/auth-middleware";
@@ -51,7 +51,7 @@ app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 app.use(cookieParser());
 
-// Initialize authentication (optional - won't crash the server if it fails)
+
 initializeAuth()
   .then(() => {
     console.log("✅ Authentication service initialized");
@@ -69,9 +69,9 @@ initializeAuth()
 // Parent Routes
 app.use("/api", authRoutes);
 app.use("/api/payment", paymentRoutes);
-app.use("/patient", requireAuth, requireCSRF, patientRoutes);
+app.use("/api/patient", requireAuth, requireCSRF, patientRoutes);
 
-// After your app.listen(), add this:
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🌟 Server is running on port ${PORT}`);
   
