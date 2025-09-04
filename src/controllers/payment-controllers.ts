@@ -45,8 +45,11 @@ export const createSetupIntent = async (req: express.Request, res: express.Respo
     // Create a SetupIntent for collecting payment method
     const setupIntent = await stripeService.stripe.setupIntents.create({
       customer: customerId,
-      payment_method_types: ['card'],
+      // payment_method_types: ['card'],
       usage: 'off_session', // Will be used for recurring payments
+      automatic_payment_methods: {
+      enabled: true,    // Or use this to automatically enable all payment methods available for your account
+      },
       metadata: {
         userId: userId.toString(),
         planType,
