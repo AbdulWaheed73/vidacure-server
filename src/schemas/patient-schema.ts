@@ -38,20 +38,29 @@ const PatientSchema: Schema = new Schema(
 
     doctor: { type: Types.ObjectId, ref: "Doctor" },
 
-    stripeCustomerId: { type: String },
+    // Keep stripeSubscriptionId at root level for webhook queries
     stripeSubscriptionId: { type: String },
-    subscriptionStatus: { 
-      type: String, 
-      enum: ["active", "canceled", "incomplete", "incomplete_expired", "past_due", "trialing", "unpaid"], 
-      default: null 
+
+    subscription: {
+      stripeCustomerId: { type: String },
+      stripeSubscriptionId: { type: String },
+      stripePriceId: { type: String },
+      stripeProductId: { type: String },
+      status: {
+        type: String,
+        enum: ["incomplete", "incomplete_expired", "trialing", "active", "past_due", "canceled", "unpaid"]
+      },
+      planType: {
+        type: String,
+        enum: ["lifestyle", "medical"]
+      },
+      currentPeriodStart: { type: Date },
+      currentPeriodEnd: { type: Date },
+      cancelAtPeriodEnd: { type: Boolean, default: false },
+      canceledAt: { type: Date },
+      trialStart: { type: Date },
+      trialEnd: { type: Date }
     },
-    subscriptionPlanType: { 
-      type: String, 
-      enum: ["lifestyle", "medical"], 
-      default: null 
-    },
-    subscriptionStartDate: { type: Date },
-    subscriptionEndDate: { type: Date },
 
     questionnaire: [
       {

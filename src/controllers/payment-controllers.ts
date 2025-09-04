@@ -1,8 +1,6 @@
 import express from "express";
 import stripeService from "../services/stripe-service";
 import PatientSchema from "../schemas/patient-schema";
-import SubscriptionSchema from "../schemas/subscription-schema";
-import { PatientT } from "../types/patient-type";
 import Stripe from "stripe";
 
 // OPTION 1: Create Setup Intent for subscription (RECOMMENDED)
@@ -24,7 +22,7 @@ export const createSetupIntent = async (req: express.Request, res: express.Respo
       return res.status(404).json({ error: 'Patient not found' });
     }
 
-    let customerId = patient.stripeCustomerId;
+    let customerId = patient.subscription?.stripeCustomerId;
 
     if (!customerId) {
       const customer = await stripeService.createCustomer(
@@ -38,7 +36,22 @@ export const createSetupIntent = async (req: express.Request, res: express.Respo
       );
       customerId = customer.id;
       
-      patient.stripeCustomerId = customerId;
+      // Initialize subscription object if it doesn't exist
+      if (!patient.subscription) {
+        patient.subscription = {
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: '',
+          stripePriceId: '',
+          stripeProductId: '',
+          status: 'incomplete',
+          planType: planType as 'lifestyle' | 'medical',
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: new Date(),
+          cancelAtPeriodEnd: false
+        };
+      } else {
+        patient.subscription.stripeCustomerId = customerId;
+      }
       await patient.save();
     }
 
@@ -90,7 +103,7 @@ export const createPaymentIntent = async (req: express.Request, res: express.Res
 
     const amount = planType === 'lifestyle' ? 79500 : 149500;
 
-    let customerId = patient.stripeCustomerId;
+    let customerId = patient.subscription?.stripeCustomerId;
 
     if (!customerId) {
       const customer = await stripeService.createCustomer(
@@ -103,7 +116,22 @@ export const createPaymentIntent = async (req: express.Request, res: express.Res
       );
       customerId = customer.id;
       
-      patient.stripeCustomerId = customerId;
+      // Initialize subscription object if it doesn't exist
+      if (!patient.subscription) {
+        patient.subscription = {
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: '',
+          stripePriceId: '',
+          stripeProductId: '',
+          status: 'incomplete',
+          planType: planType as 'lifestyle' | 'medical',
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: new Date(),
+          cancelAtPeriodEnd: false
+        };
+      } else {
+        patient.subscription.stripeCustomerId = customerId;
+      }
       await patient.save();
     }
 
@@ -153,7 +181,7 @@ export const createCheckoutSession = async (req: express.Request, res: express.R
     const successUrl = `${process.env.FRONTEND_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${process.env.FRONTEND_URL}/subscription/canceled`;
 
-    let customerId = patient.stripeCustomerId;
+    let customerId = patient.subscription?.stripeCustomerId;
 
     if (!customerId) {
       const customer = await stripeService.createCustomer(
@@ -166,7 +194,22 @@ export const createCheckoutSession = async (req: express.Request, res: express.R
       );
       customerId = customer.id;
       
-      patient.stripeCustomerId = customerId;
+      // Initialize subscription object if it doesn't exist
+      if (!patient.subscription) {
+        patient.subscription = {
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: '',
+          stripePriceId: '',
+          stripeProductId: '',
+          status: 'incomplete',
+          planType: planType as 'lifestyle' | 'medical',
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: new Date(),
+          cancelAtPeriodEnd: false
+        };
+      } else {
+        patient.subscription.stripeCustomerId = customerId;
+      }
       await patient.save();
     }
 
@@ -215,7 +258,7 @@ export const getSubscriptionStatus = async (req: express.Request, res: express.R
         subscriptionData = {
           id: subscription.id,
           status: subscription.status,
-          planType: patient.subscriptionPlanType,
+          planType: patient.subscription?.planType,
           currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
           currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
           cancelAtPeriodEnd: (subscription as any).cancel_at_period_end
@@ -227,8 +270,8 @@ export const getSubscriptionStatus = async (req: express.Request, res: express.R
 
     res.json({
       hasSubscription: !!patient.stripeSubscriptionId,
-      subscriptionStatus: patient.subscriptionStatus,
-      planType: patient.subscriptionPlanType,
+      subscriptionStatus: patient.subscription?.status,
+      planType: patient.subscription?.planType,
       subscription: subscriptionData
     });
 
@@ -253,18 +296,14 @@ export const cancelSubscription = async (req: express.Request, res: express.Resp
 
     const subscription = await stripeService.cancelSubscription(patient.stripeSubscriptionId);
 
-    patient.subscriptionStatus = 'canceled';
-    patient.subscriptionEndDate = new Date((subscription as any).current_period_end * 1000);
+    // Update nested subscription object
+    if (patient.subscription) {
+      patient.subscription.status = 'canceled';
+      patient.subscription.canceledAt = new Date();
+      patient.subscription.cancelAtPeriodEnd = (subscription as any).cancel_at_period_end;
+      patient.subscription.currentPeriodEnd = new Date((subscription as any).current_period_end * 1000);
+    }
     await patient.save();
-
-    await SubscriptionSchema.findOneAndUpdate(
-      { stripeSubscriptionId: subscription.id },
-      { 
-        status: 'canceled',
-        canceledAt: new Date(),
-        cancelAtPeriodEnd: (subscription as any).cancel_at_period_end
-      }
-    );
 
     res.json({ 
       message: 'Subscription canceled successfully',
@@ -290,12 +329,12 @@ export const createPortalSession = async (req: express.Request, res: express.Res
     }
 
     const patient = await PatientSchema.findById(userId);
-    if (!patient || !patient.stripeCustomerId) {
+    if (!patient || !patient.subscription?.stripeCustomerId) {
       return res.status(404).json({ error: 'No Stripe customer found' });
     }
 
     const returnUrl = `${process.env.FRONTEND_URL}/subscription`;
-    const session = await stripeService.createPortalSession(patient.stripeCustomerId, returnUrl);
+    const session = await stripeService.createPortalSession(patient.subscription.stripeCustomerId, returnUrl);
 
     res.json({ url: session.url });
 
@@ -330,36 +369,26 @@ export const handleSuccessfulPayment = async (session: Stripe.Checkout.Session) 
     // Retrieve the full subscription object from Stripe
     const subscription = await stripeService.retrieveSubscription(subscriptionId);
 
-    patient.stripeCustomerId = session.customer as string;
-    patient.stripeSubscriptionId = subscription.id;
-    patient.subscriptionStatus = subscription.status as PatientT['subscriptionStatus'];
-    patient.subscriptionPlanType = session.metadata?.planType as PatientT['subscriptionPlanType'];
-    
     const startTimestamp = (subscription as any).current_period_start;
     const endTimestamp = (subscription as any).current_period_end;
-    
-    patient.subscriptionStartDate = startTimestamp ? new Date(startTimestamp * 1000) : new Date();
-    patient.subscriptionEndDate = endTimestamp ? new Date(endTimestamp * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    await patient.save();
-
-    const subscriptionRecord = new SubscriptionSchema({
-      userId: patient._id,
-      stripeCustomerId: session.customer,
+    // Update patient with nested subscription object
+    patient.stripeSubscriptionId = subscription.id;
+    patient.subscription = {
+      stripeCustomerId: session.customer as string,
       stripeSubscriptionId: subscription.id,
       stripePriceId: subscription.items.data[0].price.id,
       stripeProductId: subscription.items.data[0].price.product as string,
-      status: subscription.status,
-      planType: session.metadata?.planType,
+      status: subscription.status as 'incomplete' | 'incomplete_expired' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid',
+      planType: session.metadata?.planType as 'lifestyle' | 'medical',
       currentPeriodStart: startTimestamp ? new Date(startTimestamp * 1000) : new Date(),
       currentPeriodEnd: endTimestamp ? new Date(endTimestamp * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       trialStart: subscription.trial_start ? new Date(subscription.trial_start * 1000) : undefined,
-      trialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000) : undefined,
-      metadata: session.metadata
-    });
+      trialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000) : undefined
+    };
 
-    await subscriptionRecord.save();
+    await patient.save();
 
     console.log('Successfully processed payment for patient:', patient._id);
 
@@ -375,8 +404,8 @@ export const handleFailedPayment = async (session: Stripe.Checkout.Session) => {
     const userId = session.metadata?.userId;
     if (userId) {
       const patient = await PatientSchema.findById(userId);
-      if (patient) {
-        patient.subscriptionStatus = 'unpaid';
+      if (patient && patient.subscription) {
+        patient.subscription.status = 'unpaid';
         await patient.save();
       }
     }
@@ -395,25 +424,18 @@ export const handleSubscriptionUpdate = async (subscription: Stripe.Subscription
       return;
     }
 
-    patient.subscriptionStatus = subscription.status as PatientT['subscriptionStatus'];
-    
     const updateStartTimestamp = (subscription as any).current_period_start;
     const updateEndTimestamp = (subscription as any).current_period_end;
     
-    patient.subscriptionStartDate = updateStartTimestamp ? new Date(updateStartTimestamp * 1000) : new Date();
-    patient.subscriptionEndDate = updateEndTimestamp ? new Date(updateEndTimestamp * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    // Update nested subscription object
+    if (patient.subscription) {
+      patient.subscription.status = subscription.status as 'incomplete' | 'incomplete_expired' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid';
+      patient.subscription.currentPeriodStart = updateStartTimestamp ? new Date(updateStartTimestamp * 1000) : new Date();
+      patient.subscription.currentPeriodEnd = updateEndTimestamp ? new Date(updateEndTimestamp * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      patient.subscription.cancelAtPeriodEnd = subscription.cancel_at_period_end;
+    }
 
     await patient.save();
-
-    await SubscriptionSchema.findOneAndUpdate(
-      { stripeSubscriptionId: subscription.id },
-      {
-        status: subscription.status,
-        currentPeriodStart: updateStartTimestamp ? new Date(updateStartTimestamp * 1000) : new Date(),
-        currentPeriodEnd: updateEndTimestamp ? new Date(updateEndTimestamp * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        cancelAtPeriodEnd: subscription.cancel_at_period_end
-      }
-    );
 
     console.log('Successfully updated subscription for patient:', patient._id);
 
@@ -432,18 +454,13 @@ export const handleSubscriptionDeleted = async (subscription: Stripe.Subscriptio
       return;
     }
 
-    patient.subscriptionStatus = 'canceled';
-    patient.subscriptionEndDate = new Date();
+    // Update nested subscription object
+    if (patient.subscription) {
+      patient.subscription.status = 'canceled';
+      patient.subscription.canceledAt = new Date();
+    }
 
     await patient.save();
-
-    await SubscriptionSchema.findOneAndUpdate(
-      { stripeSubscriptionId: subscription.id },
-      {
-        status: 'canceled',
-        canceledAt: new Date()
-      }
-    );
 
     console.log('Successfully processed subscription deletion for patient:', patient._id);
 
@@ -519,36 +536,26 @@ export const handleSetupIntentSucceeded = async (setupIntent: Stripe.SetupIntent
       metadata: setupIntent.metadata,
     });
 
-    // Update patient record
-    patient.stripeCustomerId = setupIntent.customer as string;
-    patient.stripeSubscriptionId = subscription.id;
-    patient.subscriptionStatus = subscription.status as PatientT['subscriptionStatus'];
-    patient.subscriptionPlanType = planType as PatientT['subscriptionPlanType'];
-    
+    // Update patient record with nested subscription object
     const startTimestamp = (subscription as any).current_period_start;
     const endTimestamp = (subscription as any).current_period_end;
     
-    patient.subscriptionStartDate = startTimestamp ? new Date(startTimestamp * 1000) : new Date();
-    patient.subscriptionEndDate = endTimestamp ? new Date(endTimestamp * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    await patient.save();
-
-    // Create subscription record
-    const subscriptionRecord = new SubscriptionSchema({
-      userId: patient._id,
-      stripeCustomerId: setupIntent.customer,
+    patient.stripeSubscriptionId = subscription.id;
+    patient.subscription = {
+      stripeCustomerId: setupIntent.customer as string,
       stripeSubscriptionId: subscription.id,
       stripePriceId: price.id,
       stripeProductId: price.product as string,
-      status: subscription.status,
-      planType: planType,
+      status: subscription.status as 'incomplete' | 'incomplete_expired' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid',
+      planType: planType as 'lifestyle' | 'medical',
       currentPeriodStart: startTimestamp ? new Date(startTimestamp * 1000) : new Date(),
       currentPeriodEnd: endTimestamp ? new Date(endTimestamp * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      metadata: setupIntent.metadata
-    });
+      trialStart: subscription.trial_start ? new Date(subscription.trial_start * 1000) : undefined,
+      trialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000) : undefined
+    };
 
-    await subscriptionRecord.save();
+    await patient.save();
 
     console.log('Successfully created subscription from setup intent for patient:', patient._id);
 
@@ -647,36 +654,26 @@ export const handlePaymentIntentSucceeded = async (paymentIntent: Stripe.Payment
       metadata: paymentIntent.metadata,
     });
 
-    // Update patient record
-    patient.stripeCustomerId = paymentIntent.customer as string;
-    patient.stripeSubscriptionId = subscription.id;
-    patient.subscriptionStatus = subscription.status as PatientT['subscriptionStatus'];
-    patient.subscriptionPlanType = planType as PatientT['subscriptionPlanType'];
-    
+    // Update patient record with nested subscription object
     const startTimestamp = (subscription as any).current_period_start;
     const endTimestamp = (subscription as any).current_period_end;
     
-    patient.subscriptionStartDate = startTimestamp ? new Date(startTimestamp * 1000) : new Date();
-    patient.subscriptionEndDate = endTimestamp ? new Date(endTimestamp * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    await patient.save();
-
-    // Create subscription record
-    const subscriptionRecord = new SubscriptionSchema({
-      userId: patient._id,
-      stripeCustomerId: paymentIntent.customer,
+    patient.stripeSubscriptionId = subscription.id;
+    patient.subscription = {
+      stripeCustomerId: paymentIntent.customer as string,
       stripeSubscriptionId: subscription.id,
       stripePriceId: price.id,
       stripeProductId: price.product as string,
-      status: subscription.status,
-      planType: planType,
+      status: subscription.status as 'incomplete' | 'incomplete_expired' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid',
+      planType: planType as 'lifestyle' | 'medical',
       currentPeriodStart: startTimestamp ? new Date(startTimestamp * 1000) : new Date(),
       currentPeriodEnd: endTimestamp ? new Date(endTimestamp * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      metadata: paymentIntent.metadata
-    });
+      trialStart: subscription.trial_start ? new Date(subscription.trial_start * 1000) : undefined,
+      trialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000) : undefined
+    };
 
-    await subscriptionRecord.save();
+    await patient.save();
 
     console.log('Successfully processed payment intent for patient:', patient._id, {
       subscriptionId: subscription.id,
