@@ -1,12 +1,15 @@
 import { Request, Response } from "express";
 import PatientSchema from "../schemas/patient-schema";
 import { AuthenticatedRequest } from "../types/generic-types";
+import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
 
-export const getAllPatients = async (req: Request, res: Response): Promise<void> => {
+export const getAllPatients = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const patients = await PatientSchema.find().select('name given_name family_name role ssnHash lastLogin createdAt');
+      await auditDatabaseOperation(req, "get_all_patients", "READ", undefined, { count: patients.length });
       res.status(200).json(patients);
-    } catch {
+    } catch (error) {
+      await auditDatabaseError(req, "get_all_patients", "READ", error);
       res.status(500).json({ error: "Error fetching patients" });
     }
   };
@@ -38,9 +41,12 @@ export const submitQuestionnaire = async (req: AuthenticatedRequest, res: Respon
     const patient = await PatientSchema.findById(userId);
     
     if (!patient) {
+      await auditDatabaseError(req, "submit_questionnaire_find_patient", "READ", new Error("Patient not found"), userId);
       res.status(404).json({ error: "Patient not found" });
       return;
     }
+
+    await auditDatabaseOperation(req, "submit_questionnaire_find_patient", "READ", userId);
 
     // Update questionnaire
     patient.questionnaire = questionnaire;
@@ -51,16 +57,22 @@ export const submitQuestionnaire = async (req: AuthenticatedRequest, res: Respon
     // Save patient and send response
     try {
       await patient.save();
+      await auditDatabaseOperation(req, "submit_questionnaire_save", "UPDATE", userId, { 
+        questionnaireLength: questionnaire.length,
+        onboardingCompleted: true 
+      });
       res.status(200).json({ 
         message: "Questionnaire submitted successfully",
         questionnaire: patient.questionnaire 
       });
     } catch (saveError) {
       console.error("Error saving patient questionnaire:", saveError);
+      await auditDatabaseError(req, "submit_questionnaire_save", "UPDATE", saveError, userId);
       res.status(500).json({ error: "Error saving questionnaire" });
     }
   } catch (error) {
     console.error("Error submitting questionnaire:", error);
+    await auditDatabaseError(req, "submit_questionnaire", "UPDATE", error, req.user?.userId);
     res.status(500).json({ error: "Error submitting questionnaire" });
   }
 };
@@ -78,15 +90,21 @@ export const getQuestionnaire = async (req: AuthenticatedRequest, res: Response)
     const patient = await PatientSchema.findById(userId);
     
     if (!patient) {
+      await auditDatabaseError(req, "get_questionnaire", "READ", new Error("Patient not found"), userId);
       res.status(404).json({ error: "Patient not found" });
       return;
     }
+
+    await auditDatabaseOperation(req, "get_questionnaire", "READ", userId, { 
+      questionnaireLength: patient.questionnaire?.length || 0 
+    });
 
     res.status(200).json({ 
       questionnaire: patient.questionnaire || [] 
     });
   } catch (error) {
     console.error("Error fetching questionnaire:", error);
+    await auditDatabaseError(req, "get_questionnaire", "READ", error, req.user?.userId);
     res.status(500).json({ error: "Error fetching questionnaire" });
   }
 };
@@ -110,9 +128,12 @@ export const updateQuestionnaire = async (req: AuthenticatedRequest, res: Respon
     const patient = await PatientSchema.findById(userId);
     
     if (!patient) {
+      await auditDatabaseError(req, "update_questionnaire", "READ", new Error("Patient not found"), userId);
       res.status(404).json({ error: "Patient not found" });
       return;
     }
+
+    await auditDatabaseOperation(req, "update_questionnaire_find_patient", "READ", userId);
 
     // Update specific questions
     updates.forEach((update: { questionId: string; answer: string }) => {
@@ -133,6 +154,10 @@ export const updateQuestionnaire = async (req: AuthenticatedRequest, res: Respon
     });
 
     await patient.save();
+    await auditDatabaseOperation(req, "update_questionnaire_save", "UPDATE", userId, { 
+      updatesCount: updates.length,
+      questionnaireLength: patient.questionnaire.length 
+    });
 
     res.status(200).json({ 
       message: "Questionnaire updated successfully",
@@ -140,6 +165,7 @@ export const updateQuestionnaire = async (req: AuthenticatedRequest, res: Respon
     });
   } catch (error) {
     console.error("Error updating questionnaire:", error);
+    await auditDatabaseError(req, "update_questionnaire", "UPDATE", error, req.user?.userId);
     res.status(500).json({ error: "Error updating questionnaire" });
   }
 };

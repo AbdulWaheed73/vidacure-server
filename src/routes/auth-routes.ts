@@ -7,6 +7,7 @@ import {
   setLogin,
 } from "../controllers/auth-controllers";
 import { requireAuth } from "../middleware/auth-middleware";
+import { auditMiddleware } from "../middleware/audit-middleware";
 import { CriiptoVerifyExpressJwt } from "@criipto/verify-express";
 
 const expressJwt = new CriiptoVerifyExpressJwt({
@@ -23,10 +24,10 @@ router.post("/login", expressJwt.middleware(), setLogin);
 
 router.get("/callback", handleCallback);
 router.post("/callback", handleCallback);
-router.get("/me", requireAuth, getCurrentUser);
+router.get("/me", requireAuth, auditMiddleware, getCurrentUser);
 router.post("/logout", logout);
 
-router.get("/login/check", requireAuth, getCurrentUser)
+router.get("/login/check", requireAuth, auditMiddleware, getCurrentUser)
 
 // Health check endpoint for network connectivity testing
 router.get("/health", (req, res) => {

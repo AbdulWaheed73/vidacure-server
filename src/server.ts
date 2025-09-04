@@ -8,6 +8,7 @@ import authRoutes from "./routes/auth-routes";
 import patientRoutes from "./routes/patient-routes";
 import paymentRoutes from "./routes/payment-routes";
 import { requireAuth, requireCSRF } from "./middleware/auth-middleware";
+import { auditMiddleware } from "./middleware/audit-middleware";
 import os from 'os';
 
 
@@ -69,7 +70,7 @@ initializeAuth()
 // Parent Routes
 app.use("/api", authRoutes);
 app.use("/api/payment", paymentRoutes);
-app.use("/api/patient", requireAuth, requireCSRF, patientRoutes);
+app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, patientRoutes);
 
 
 app.listen(PORT, "0.0.0.0", () => {

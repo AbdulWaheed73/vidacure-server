@@ -7,6 +7,8 @@ const AuditLogSchema: Schema = new Schema({
   userId: { type: Types.ObjectId, required: true },
   role: { type: String, enum: ["patient", "doctor", "admin"], required: true },
   action: { type: String, required: true },
+  operation: { type: String, enum: ["CREATE", "READ", "UPDATE", "DELETE"], required: true },
+  success: { type: Boolean, required: true },
   targetId: { type: Types.ObjectId },
   ipAddress: { type: String },
   userAgent: { type: String },

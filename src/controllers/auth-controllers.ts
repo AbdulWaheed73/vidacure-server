@@ -17,11 +17,12 @@ import Patient from "../schemas/patient-schema";
 import Doctor from "../schemas/doctor-schema";
 
 import { browserDetails } from "../middleware/auth-middleware";
+import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
 
 export const initiateLogin = (req: Request, res: Response): void => {
   try {
     const state = generateRandomState();
-    const clientType = browserDetails(req, res);
+    const clientType = browserDetails(req);
 
     let acrValues: string;
     switch (clientType) {
@@ -129,6 +130,16 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
 
     // Find or create user based on Criipto claims
     const { user, isNewUser } = await findOrCreateUser(criiptoUserClaims);
+    
+    // Audit log for user authentication (we'll create a special request with user info)
+    const auditReq = {
+      ...req,
+      user: { userId: user._id?.toString() || '', role: user.role }
+    } as AuthenticatedRequest;
+    
+    await auditDatabaseOperation(auditReq, isNewUser ? "user_registration_mobile" : "user_login_mobile", 
+                               isNewUser ? "CREATE" : "READ", user._id?.toString(), 
+                               { authMethod: "bankid_mobile", ssn: criiptoUserClaims.ssn ? "provided" : "missing" });
 
     console.log(
       `👤 ${isNewUser ? "Created new user" : "Found existing user"}:`,
@@ -160,6 +171,27 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
     });
   } catch (error) {
     console.error("❌ Mobile login error:", error);
+    
+    // Try to audit the failed authentication attempt
+    try {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith("Bearer ")) {
+        const criiptoJWT = authHeader.substring(7);
+        const criiptoUserClaims = jwt.decode(criiptoJWT) as CriiptoUserClaims;
+        
+        // Create a minimal audit request for failed authentication
+        const auditReq = {
+          ...req,
+          user: { userId: 'unknown', role: 'unknown' }
+        } as any;
+        
+        await auditDatabaseError(auditReq, "user_login_mobile_failed", "READ", error, undefined, 
+                               { authMethod: "bankid_mobile", ssn: criiptoUserClaims?.ssn ? "provided" : "missing" });
+      }
+    } catch {
+      // Ignore audit errors during error handling
+    }
+    
     res.status(500).json({
       error: "Authentication failed",
       details: error instanceof Error ? error.message : "Unknown error",
@@ -243,6 +275,16 @@ export const handleCallback = async (
 
     // Find or create user based on SSN
     const { user, isNewUser } = await findOrCreateUser(criiptoToken);
+    
+    // Audit log for user authentication via web callback
+    const auditReq = {
+      ...req,
+      user: { userId: user._id?.toString() || '', role: user.role }
+    } as AuthenticatedRequest;
+    
+    await auditDatabaseOperation(auditReq, isNewUser ? "user_registration_web" : "user_login_web", 
+                               isNewUser ? "CREATE" : "READ", user._id?.toString(), 
+                               { authMethod: "bankid_web", ssn: criiptoToken.ssn ? "provided" : "missing" });
 
     // Create our own app JWT
     const appJWT = createAppJWT(user);
@@ -271,6 +313,20 @@ export const handleCallback = async (
     );
   } catch (error) {
     console.error("❌ Callback error:", error);
+    
+    // Try to audit the failed authentication attempt
+    try {
+      const auditReq = {
+        ...req,
+        user: { userId: 'unknown', role: 'unknown' }
+      } as any;
+      
+      await auditDatabaseError(auditReq, "user_login_web_callback_failed", "READ", error, undefined, 
+                             { authMethod: "bankid_web", step: "callback" });
+    } catch {
+      // Ignore audit errors during error handling
+    }
+    
     res.status(500).json({
       error: "Authentication failed",
       details: error instanceof Error ? error.message : "Unknown error",
@@ -294,12 +350,15 @@ export const getCurrentUser = async (
     }
 
     if (!user) {
+      await auditDatabaseError(req, "get_current_user", "READ", new Error("User not found"), userId);
       res.status(401).json({
         authenticated: false,
         message: "User not found",
       });
       return;
     }
+
+    await auditDatabaseOperation(req, "get_current_user", "READ", userId, { role: user.role });
 
     // Get the existing CSRF token from cookie
     const existingCsrfToken = req.cookies.csrf_token;
@@ -322,6 +381,7 @@ export const getCurrentUser = async (
     });
   } catch (error) {
     console.error("Error in getCurrentUser:", error);
+    await auditDatabaseError(req, "get_current_user", "READ", error, req.user?.userId);
     res.status(500).json({ error: "Failed to fetch user data" });
   }
 };

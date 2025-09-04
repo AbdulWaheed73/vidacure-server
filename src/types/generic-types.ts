@@ -19,8 +19,12 @@ export type AppUserClaims = JwtPayload & {
 }
 
 // Request with authenticated user
-export type AuthenticatedRequest = Request & {
+export interface AuthenticatedRequest extends Request {
   user?: AppUserClaims;
+  auditLogger?: {
+    logSuccess: (action: string, operation: "CREATE" | "READ" | "UPDATE" | "DELETE", targetId?: string, metadata?: Record<string, any>) => Promise<void>;
+    logFailure: (action: string, operation: "CREATE" | "READ" | "UPDATE" | "DELETE", error: any, targetId?: string, metadata?: Record<string, any>) => Promise<void>;
+  };
 }
 
 // Base user type
@@ -36,15 +40,6 @@ export type BaseUser = {
   lastLogin?: Date;
 }
 
-// Audit log type
-export type AuditLog = {
-  timestamp: Date;
-  action: string;
-  userId?: string;
-  details: any;
-  ipAddress?: string;
-  userAgent?: string;
-}
 
 // CSRF token type
 export type CSRFToken = {
