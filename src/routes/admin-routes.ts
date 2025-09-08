@@ -4,7 +4,7 @@ import { requireAuth, requireRole } from "../middleware/auth-middleware";
 const router = express.Router();
 
 // Admin routes - protected by authentication and role
-router.get("/users", requireAuth, requireRole(['superadmin']), (req, res) => {
+router.get("/users", requireAuth, requireRole('superadmin'), (req, res) => {
   try {
     // This would typically fetch users from the database
     // For now, just return a success message

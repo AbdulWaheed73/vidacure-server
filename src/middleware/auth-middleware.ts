@@ -117,7 +117,7 @@ export async function requireCSRF(
   const clientToken = req.headers["x-csrf-token"] as string;
   const csrf = req.cookies?.csrf_token as string;
   const clientType = browserDetails(req);
-  // console.log("csrf client token: ",clientToken);
+
   if (clientType === "app") {
     next();
     return;
@@ -131,24 +131,39 @@ export async function requireCSRF(
     res.status(401).json({error: "Wrong CSRF token"});
   }
 
-  // For now, just check if token exists
-  // You can implement full CSRF validation later
-  // console.log("\npass2\n");
 
   next();
 }
 
 // Role-based access control
-export function requireRole(allowedRoles: string[]) {
+export function requireRole(allowedRoles: string) {
   return (
     req: AuthenticatedRequest,
     res: Response,
     next: NextFunction
   ): void => {
-    if (!req.user || !allowedRoles.includes(req.user.role)) {
+    console.log("\n\n\nroleeeewewewewew: ", req?.user?.role, "\n\n\n")
+    if (!(allowedRoles === req?.user?.role)) {
       res.status(403).json({ error: "Insufficient permissions" });
       return;
     }
     next();
   };
 }
+
+// Combined middleware for doctor-only access
+// export function requireDoctor(
+//   req: AuthenticatedRequest,
+//   res: Response,
+//   next: NextFunction
+// ): void {
+//   // First check authentication
+//   requireAuth(req, res, () => {
+//     // Then check CSRF (if needed)
+//     requireCSRF(req, res, () => {
+//       // Finally check doctor role
+//       const roleCheck = requireRole(['doctor']);
+//       roleCheck(req, res, next);
+//     });
+//   });
+// }

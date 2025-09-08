@@ -15,21 +15,21 @@ import {
   handlePaymentIntentSucceeded,
   handleSetupIntentSucceeded
 } from "../controllers/payment-controllers";
-import { requireAuth, requireCSRF } from "../middleware/auth-middleware";
+// import { requireAuth, requireCSRF } from "../middleware/auth-middleware";
 
 const router = express.Router();
 
-router.post("/create-payment-intent", requireAuth, requireCSRF, createPaymentIntent);
+router.post("/create-payment-intent", createPaymentIntent);
 
-router.post("/create-setup-intent", requireAuth, requireCSRF, createSetupIntent);
+router.post("/create-setup-intent", createSetupIntent);
 
-router.post("/create-checkout-session", requireAuth, requireCSRF, createCheckoutSession);
+router.post("/create-checkout-session", createCheckoutSession);
 
-router.get("/subscription/status", requireAuth, requireCSRF, getSubscriptionStatus);
+router.get("/subscription/status", getSubscriptionStatus);
 
-router.post("/subscription/cancel", requireAuth, requireCSRF, cancelSubscription);
+router.post("/subscription/cancel", cancelSubscription);
 
-router.post("/create-portal-session", requireAuth, requireCSRF, createPortalSession);
+router.post("/create-portal-session", createPortalSession);
 
 router.post("/webhook", express.raw({ type: 'application/json' }), async (req: express.Request, res: express.Response) => {
   const signature = req.headers['stripe-signature'] as string;

@@ -6,8 +6,9 @@ import { initializeAuth } from "./services/auth-service";
 import authRoutes from "./routes/auth-routes";
 // import adminRoutes from "./routes/admin-routes";
 import patientRoutes from "./routes/patient-routes";
+import doctorRoutes from "./routes/doctor-routes";
 import paymentRoutes from "./routes/payment-routes";
-import { requireAuth, requireCSRF } from "./middleware/auth-middleware";
+import { requireAuth, requireCSRF, requireRole } from "./middleware/auth-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
 import os from 'os';
 
@@ -69,8 +70,9 @@ initializeAuth()
 
 // Parent Routes
 app.use("/api", authRoutes);
-app.use("/api/payment", paymentRoutes);
-app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, patientRoutes);
+app.use("/api/payment", requireAuth,auditMiddleware, requireCSRF, paymentRoutes);
+app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), patientRoutes);
+app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), doctorRoutes);
 
 
 app.listen(PORT, "0.0.0.0", () => {
