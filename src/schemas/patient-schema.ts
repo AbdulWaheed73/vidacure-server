@@ -29,7 +29,9 @@ const PatientSchema: Schema = new Schema(
     weightHistory: [
       {
         weight: { type: Number, required: true },
-        date: { type: Date, default: Date.now }
+        date: { type: Date, default: Date.now },
+        sideEffects: { type: String, required: false },
+        notes: { type: String, required: false }
       }
     ],
 

@@ -3,7 +3,9 @@ import {
   getAllPatients, 
   submitQuestionnaire, 
   getQuestionnaire, 
-  updateQuestionnaire 
+  updateQuestionnaire,
+  addWeightHistory,
+  getWeightHistory 
 } from "../controllers/patient-controllers";
 
 const router = Router();
@@ -15,5 +17,9 @@ router.get("/", getAllPatients);
 router.post("/questionnaire", submitQuestionnaire);
 router.get("/questionnaire", getQuestionnaire);
 router.patch("/questionnaire", updateQuestionnaire);
+
+// Weight history routes
+router.post("/weight-history", addWeightHistory);
+router.get("/weight-history", getWeightHistory);
 
 export default router;

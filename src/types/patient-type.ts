@@ -18,6 +18,8 @@ export type PatientT = {
   weightHistory: {
     weight: number;
     date: Date;
+    sideEffects?: string;
+    notes?: string;
   }[];
 
   height?: number;
