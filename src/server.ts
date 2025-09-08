@@ -70,7 +70,7 @@ initializeAuth()
 
 // Parent Routes
 app.use("/api", authRoutes);
-app.use("/api/payment", requireAuth,auditMiddleware, requireCSRF, paymentRoutes);
+app.use("/api/payment", requireAuth,auditMiddleware, requireCSRF, requireRole('patient'), paymentRoutes);
 app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), patientRoutes);
 app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), doctorRoutes);
 
