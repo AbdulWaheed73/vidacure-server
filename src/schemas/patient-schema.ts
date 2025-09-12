@@ -83,7 +83,10 @@ const PatientSchema: Schema = new Schema(
         enum: ["active", "expired", "pendingRenewal"]
       },
       updatedAt: { type: Date }
-    }
+    },
+
+    // Stream Chat related fields
+    chatChannelId: { type: String } // Store the patient's medical channel ID
   },
   { timestamps: true }
 );

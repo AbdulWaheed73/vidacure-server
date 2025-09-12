@@ -61,6 +61,9 @@ export type PatientT = {
     updatedAt: Date;
   };
 
+  // Stream Chat related fields
+  chatChannelId?: string; // Store the patient's medical channel ID
+
   createdAt: Date;
   updatedAt: Date;
 };

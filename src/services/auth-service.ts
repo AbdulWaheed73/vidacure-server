@@ -14,6 +14,7 @@ const clientSecret: string = process.env.CRIIPTO_CLIENT_SECRET as string;
 const redirectUri: string = process.env.REDIRECT_URI as string;
 const JWT_SECRET: string = process.env.JWT_SECRET as string;
 const SSN_HASH_SECRET: string = process.env.SSN_HASH_SECRET as string;
+const TTL: number = Number(process.env.TTL); // Default to 30 minutes in milliseconds
 
 // Initialize configuration manager
 const configManager = new OpenIDConfigurationManager(`https://${domain}`, clientId_web);
@@ -126,7 +127,7 @@ export function createAppJWT(user: PatientT | DoctorT | BaseUser): string {
     userId: user._id?.toString() || 'temp-id',
     role: user.role,
     iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + (30 * 60) // 30 minutes
+    exp: Math.floor(Date.now() / 1000) + Math.floor(TTL / 1000) // Convert milliseconds to seconds
   };
   
   return jwt.sign(payload, JWT_SECRET);

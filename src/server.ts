@@ -8,6 +8,7 @@ import authRoutes from "./routes/auth-routes";
 import patientRoutes from "./routes/patient-routes";
 import doctorRoutes from "./routes/doctor-routes";
 import paymentRoutes from "./routes/payment-routes";
+import chatRoutes from "./routes/chat-routes";
 import { requireAuth, requireCSRF, requireRole } from "./middleware/auth-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
 import os from 'os';
@@ -73,7 +74,14 @@ app.use("/api", authRoutes);
 app.use("/api/payment", requireAuth,auditMiddleware, requireCSRF, requireRole('patient'), paymentRoutes);
 app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), patientRoutes);
 app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), doctorRoutes);
+// Chat routes without CSRF for now - will add CSRF to individual routes that need it
+app.use("/api/chat", requireAuth, auditMiddleware, chatRoutes);
 
+app.post('/1401621/chat', express.raw({type: 'application/json'}), (req, res) => {
+  console.log("\n\n\nheyy im hit !!!\n\n\n\n");
+  console.log("Webhook received:", req.body);
+  res.status(200).send('OK'); // Important: Send response back
+});
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🌟 Server is running on port ${PORT}`);
