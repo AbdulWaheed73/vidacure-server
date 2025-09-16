@@ -29,8 +29,20 @@ databaseConnection()
 
 
 const corsOptions = {
-  origin: "*", 
-  methods: "GET,POST,PUT,DELETE",
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://192.168.0.101:3000",
+    "http://192.168.0.103:3000",
+    "http://172.16.21.144:3000",
+    "http://192.168.0.103:3000",
+    "http://192.168.0.101:5173",
+    "http://192.168.0.103:5173",
+    "http://172.16.21.144:5173",
+    "http://192.168.0.103:5173",
+    "0.0.0.0",
+  ], 
+  methods: "GET,POST,PUT,PATCH,DELETE",
   allowedHeaders: "Content-Type, Authorization, x-csrf-token, x-client",
   credentials: true,
 };

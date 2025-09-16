@@ -261,15 +261,15 @@ export const getWeightHistory = async (req: AuthenticatedRequest, res: Response)
     }
 
     const patient = await PatientSchema.findById(userId);
-    
+
     if (!patient) {
       await auditDatabaseError(req, "get_weight_history", "READ", new Error("Patient not found"), userId);
       res.status(404).json({ error: "Patient not found" });
       return;
     }
 
-    await auditDatabaseOperation(req, "get_weight_history", "READ", userId, { 
-      entriesCount: patient.weightHistory?.length || 0 
+    await auditDatabaseOperation(req, "get_weight_history", "READ", userId, {
+      entriesCount: patient.weightHistory?.length || 0
     });
 
     // Sort weight history by date (newest first)
@@ -282,12 +282,53 @@ export const getWeightHistory = async (req: AuthenticatedRequest, res: Response)
         notes: entry.notes
       }));
 
-    res.status(200).json({ 
+    res.status(200).json({
       weightHistory: sortedHistory
     });
   } catch (error) {
     console.error("Error fetching weight history:", error);
     await auditDatabaseError(req, "get_weight_history", "READ", error, req.user?.userId);
     res.status(500).json({ error: "Error fetching weight history" });
+  }
+};
+
+// Update patient profile (e.g., email)
+export const updateProfile = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body;
+    const userId = req.user?.userId;
+console.log("\n\n\nupdateProfile called with:", req.body);
+    if (!userId) {
+      res.status(401).json({ error: "User not authenticated" });
+      return;
+    }
+
+    const patient = await PatientSchema.findById(userId);
+
+    if (!patient) {
+      await auditDatabaseError(req, "update_profile", "READ", new Error("Patient not found"), userId);
+      res.status(404).json({ error: "Patient not found" });
+      return;
+    }
+
+    await auditDatabaseOperation(req, "update_profile_find_patient", "READ", userId);
+
+    // Update email if provided
+    if (email !== undefined) {
+      patient.email = email;
+    }
+
+    await patient.save();
+    await auditDatabaseOperation(req, "update_profile_save", "UPDATE", userId, {
+      emailUpdated: email !== undefined
+    });
+
+    res.status(200).json({
+      message: "Profile updated successfully"
+    });
+  } catch (error) {
+    console.error("Error updating profile:", error);
+    await auditDatabaseError(req, "update_profile", "UPDATE", error, req.user?.userId);
+    res.status(500).json({ error: "Error updating profile" });
   }
 };

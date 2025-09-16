@@ -13,7 +13,7 @@ export type PatientT = {
   // Patient-specific fields
   dateOfBirth?: Date;
   gender?: "male" | "female" | "other";
-  email?: string;
+  email: string;
 
   weightHistory: {
     weight: number;
