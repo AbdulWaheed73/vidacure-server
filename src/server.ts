@@ -9,6 +9,7 @@ import patientRoutes from "./routes/patient-routes";
 import doctorRoutes from "./routes/doctor-routes";
 import paymentRoutes from "./routes/payment-routes";
 import chatRoutes from "./routes/chat-routes";
+import calendlyRoutes from "./routes/calendly-routes";
 import { requireAuth, requireCSRF, requireRole } from "./middleware/auth-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
 import os from 'os';
@@ -76,6 +77,8 @@ app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('
 app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), doctorRoutes);
 // Chat routes without CSRF for now - will add CSRF to individual routes that need it
 app.use("/api/chat", requireAuth, auditMiddleware, chatRoutes);
+// Calendly routes - accessible by both patients and doctors
+app.use("/api/calendly", requireAuth, auditMiddleware, requireCSRF, calendlyRoutes);
 
 app.post('/1401621/chat', express.raw({type: 'application/json'}), (req, res) => {
   console.log("\n\n\nheyy im hit !!!\n\n\n\n");

@@ -48,6 +48,7 @@
     "@criipto/oidc": "^1.0.0",
     "@criipto/verify-express": "^1.0.4",
     "@types/stripe": "^8.0.416",
+    "axios": "^1.12.2",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "jsonwebtoken": "^9.0.2",

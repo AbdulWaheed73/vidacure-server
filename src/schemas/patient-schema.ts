@@ -74,7 +74,6 @@ const PatientSchema: Schema = new Schema(
     hasCompletedOnboarding: { type: Boolean, default: false },
 
     prescription: {
-      doctor: { type: Types.ObjectId, ref: "Doctor" },
       medicationDetails: { type: String },
       validFrom: { type: Date },
       validTo: { type: Date },

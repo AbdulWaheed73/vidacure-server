@@ -26,7 +26,17 @@ const DoctorSchema: Schema = new Schema(
     email: { type: String, required: true, unique: true },
     patients: [{ type: Types.ObjectId, ref: "Patient" }],
     // hasCompletedOnboarding: { type: Boolean, default: false }
-    
+
+    // Calendly integration fields
+    calendlyUserUri: { type: String }, // Individual doctor's Calendly user URI
+
+    // Event types offered by this doctor - just names for Calendly API
+    eventTypes: {
+      free: { type: String, default: "Free Consultation" },
+      standard: { type: String, default: "Standard Appointment" },
+      premium: { type: String, default: "Premium Consultation" }
+    },
+
     // Stream Chat related fields - doctors can be in multiple channels
     assignedChannels: [{ type: String }] // Array of channel IDs this doctor is assigned to
   },
