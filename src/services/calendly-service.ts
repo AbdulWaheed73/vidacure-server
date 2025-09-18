@@ -1,24 +1,10 @@
 import axios, { AxiosRequestConfig } from 'axios';
+import type { CalendlyEventType, CalendlySchedulingLink } from '../types/calendly-types';
 
 // Environment variables
 const CALENDLY_ACCESS_TOKEN: string = process.env.CALENDLY_ACCESS_TOKEN || '';
 const CALENDLY_ORG_URI: string = process.env.CALENDLY_ORG_URI || '';
 const CALENDLY_BASE_URL = 'https://api.calendly.com';
-
-// Types
-export type CalendlyEventType = {
-  uri: string;
-  name: string;
-  scheduling_url: string;
-  pooling_type: string | null;
-  active: boolean;
-};
-
-export type CalendlySchedulingLink = {
-  booking_url: string;
-  owner: string;
-  owner_type: string;
-};
 
 // Utility function for making API requests
 async function makeCalendlyRequest(endpoint: string, options: AxiosRequestConfig = {}) {

@@ -2,18 +2,7 @@ import { Types } from "mongoose";
 import AuditLogSchema from "../schemas/auditLog-schema";
 import { AuditLogT } from "../types/auditLog-type";
 import { AuthenticatedRequest } from "../types/generic-types";
-
-export type AuditLogData = {
-  userId: string;
-  role: "patient" | "doctor" | "admin";
-  action: string;
-  operation: "CREATE" | "READ" | "UPDATE" | "DELETE";
-  success: boolean;
-  targetId?: string;
-  ipAddress?: string;
-  userAgent?: string;
-  metadata?: Record<string, any>;
-};
+import type { AuditLogData } from "../types/audit-types";
 
 export function extractIpAddress(req: AuthenticatedRequest): string {
   // Check for IP from various headers in order of preference
