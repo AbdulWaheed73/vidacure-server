@@ -10,6 +10,7 @@ import doctorRoutes from "./routes/doctor-routes";
 import paymentRoutes from "./routes/payment-routes";
 import chatRoutes from "./routes/chat-routes";
 import calendlyRoutes from "./routes/calendly-routes";
+import prescriptionRoutes from "./routes/prescription-routes";
 import { requireAuth, requireCSRF, requireRole } from "./middleware/auth-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
 import os from 'os';
@@ -75,6 +76,7 @@ app.use("/api", authRoutes);
 app.use("/api/payment", requireAuth,auditMiddleware, requireCSRF, requireRole('patient'), paymentRoutes);
 app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), patientRoutes);
 app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), doctorRoutes);
+app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), prescriptionRoutes);
 // Chat routes without CSRF for now - will add CSRF to individual routes that need it
 app.use("/api/chat", requireAuth, auditMiddleware, chatRoutes);
 // Calendly routes - accessible by both patients and doctors

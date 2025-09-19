@@ -84,6 +84,22 @@ const PatientSchema: Schema = new Schema(
       updatedAt: { type: Date }
     },
 
+    prescriptionRequests: [
+      {
+        status: {
+          type: String,
+          enum: ["pending", "approved", "denied", "under_review"],
+          default: "pending",
+          required: true
+        },
+        currentWeight: { type: Number, required: true },
+        hasSideEffects: { type: Boolean, required: true },
+        sideEffectsDescription: { type: String, required: false },
+        createdAt: { type: Date, default: Date.now },
+        updatedAt: { type: Date, default: Date.now }
+      }
+    ],
+
     // Stream Chat related fields
     chatChannelId: { type: String } // Store the patient's medical channel ID
   },

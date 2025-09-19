@@ -61,6 +61,16 @@ export type PatientT = {
     updatedAt: Date;
   };
 
+  prescriptionRequests: {
+    _id?: Types.ObjectId;
+    status: "pending" | "approved" | "denied" | "under_review";
+    currentWeight: number;
+    hasSideEffects: boolean;
+    sideEffectsDescription?: string;
+    createdAt: Date;
+    updatedAt: Date;
+  }[];
+
   // Stream Chat related fields
   chatChannelId?: string; // Store the patient's medical channel ID
 
