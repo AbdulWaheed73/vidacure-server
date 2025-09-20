@@ -300,17 +300,19 @@ export const handleCallback = async (
     // Store app JWT in httpOnly cookie
     res.cookie("app_token", appJWT, {
       httpOnly: true,
-      secure: Boolean(process.env.SECURE), // Set to true in production with HTTPS
+      secure: Boolean(process.env.SECURE),
       sameSite: 'lax',
-      maxAge: Number(process.env.TTL), // 30 minutes
+      domain: process.env.NODE_ENV === 'production' ? '13.62.121.217' : undefined,
+      maxAge: Number(process.env.TTL),
     });
 
     // Store CSRF token in a non-httpOnly cookie so frontend can access it
     res.cookie("csrf_token", csrfToken, {
-      httpOnly: false, // Allow frontend to read this
-      secure: Boolean(process.env.SECURE), // Set to true in production with HTTPS
+      httpOnly: false,
+      secure: Boolean(process.env.SECURE),
       sameSite: 'lax',
-      maxAge: Number(process.env.TTL), // 30 minutes
+      domain: process.env.NODE_ENV === 'production' ? '13.62.121.217' : undefined,
+      maxAge: Number(process.env.TTL),
     });
 
     // Redirect back to frontend with success message
