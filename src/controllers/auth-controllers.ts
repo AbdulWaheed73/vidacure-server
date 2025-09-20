@@ -51,6 +51,7 @@ export const initiateLogin = (req: Request, res: Response): void => {
     res.cookie("oauth_state", state, {
       httpOnly: true,
       secure: Boolean(process.env.COOKIE_SECURE), 
+      sameSite: 'lax',
       maxAge: Number(process.env.TTL),
     });
 
@@ -296,6 +297,7 @@ export const handleCallback = async (
     res.cookie("app_token", appJWT, {
       httpOnly: true,
       secure: Boolean(process.env.SECURE), // Set to true in production with HTTPS
+      sameSite: 'lax',
       maxAge: Number(process.env.TTL), // 30 minutes
     });
 
@@ -303,6 +305,7 @@ export const handleCallback = async (
     res.cookie("csrf_token", csrfToken, {
       httpOnly: false, // Allow frontend to read this
       secure: Boolean(process.env.SECURE), // Set to true in production with HTTPS
+      sameSite: 'lax',
       maxAge: Number(process.env.TTL), // 30 minutes
     });
 
