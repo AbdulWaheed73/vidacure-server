@@ -50,10 +50,14 @@ export const initiateLogin = (req: Request, res: Response): void => {
 
     res.cookie("oauth_state", state, {
       httpOnly: true,
-      secure: Boolean(process.env.COOKIE_SECURE), 
+      secure: false, 
       sameSite: 'lax',
+      path: '/',
+      domain: undefined,
       maxAge: Number(process.env.TTL),
     });
+
+    console.log("Setting oauth_state cookie:", state)
 
     res.redirect(url.toString());
   } catch (error) {
