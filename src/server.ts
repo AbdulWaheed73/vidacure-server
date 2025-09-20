@@ -51,7 +51,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
+// app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 
 app.use(express.json());
 app.use(cookieParser());
@@ -73,7 +73,7 @@ initializeAuth()
 
 // Parent Routes
 app.use("/api", authRoutes);
-app.use("/api/payment", requireAuth,auditMiddleware, requireCSRF, requireRole('patient'), paymentRoutes);
+app.use("/api/payment", paymentRoutes);
 app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), patientRoutes);
 app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), doctorRoutes);
 app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), prescriptionRoutes);

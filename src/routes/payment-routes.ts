@@ -15,21 +15,23 @@ import {
   handlePaymentIntentSucceeded,
   handleSetupIntentSucceeded
 } from "../controllers/payment-controllers";
+import { requireAuth, requireCSRF, requireRole } from "../middleware/auth-middleware";
+import { auditMiddleware } from "../middleware/audit-middleware";
 // import { requireAuth, requireCSRF } from "../middleware/auth-middleware";
 
 const router = express.Router();
 
-router.post("/create-payment-intent", createPaymentIntent);
+router.post("/create-payment-intent", requireAuth,auditMiddleware, requireCSRF, requireRole('patient') ,createPaymentIntent);
 
-router.post("/create-setup-intent", createSetupIntent);
+router.post("/create-setup-intent", requireAuth,auditMiddleware, requireCSRF, requireRole('patient') ,createSetupIntent);
 
-router.post("/create-checkout-session", createCheckoutSession);
+router.post("/create-checkout-session", requireAuth,auditMiddleware, requireCSRF, requireRole('patient') ,createCheckoutSession);
 
-router.get("/subscription/status", getSubscriptionStatus);
+router.get("/subscription/status", requireAuth,auditMiddleware, requireCSRF, requireRole('patient') ,getSubscriptionStatus);
 
-router.post("/subscription/cancel", cancelSubscription);
+router.post("/subscription/cancel", requireAuth,auditMiddleware, requireCSRF, requireRole('patient') ,cancelSubscription);
 
-router.post("/create-portal-session", createPortalSession);
+router.post("/create-portal-session", requireAuth,auditMiddleware, requireCSRF, requireRole('patient') ,createPortalSession);
 
 router.post("/webhook", express.raw({ type: 'application/json' }), async (req: express.Request, res: express.Response) => {
   const signature = req.headers['stripe-signature'] as string;
