@@ -307,7 +307,7 @@ export const handleCallback = async (
     });
 
     // Redirect back to frontend with success message
-    const frontendUrl = process.env.FRONTEND_URL;
+    const frontendUrl = process.env.NODE_ENV === "production" ? process.env.PROD_FRONTEND_URL : process.env.DEV_FRONTEND_URL;
     res.redirect(
       `${frontendUrl}?auth=success&message=${encodeURIComponent(isNewUser ? "Welcome! Account created successfully." : "Login successful!")}`
     );
