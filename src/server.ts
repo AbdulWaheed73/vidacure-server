@@ -19,6 +19,14 @@ import os from 'os';
 const app = express();
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
+// Environment-based configuration
+const isProduction = process.env.NODE_ENV === 'production';
+const FRONTEND_URL = isProduction ? process.env.PROD_FRONTEND_URL : process.env.DEV_FRONTEND_URL;
+const REDIRECT_URI = isProduction ? process.env.PROD_REDIRECT_URI : process.env.DEV_REDIRECT_URI;
+
+console.log(`🏗️ Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+console.log(`🔗 Frontend URL: ${FRONTEND_URL}`);
+console.log(`↩️ Redirect URI: ${REDIRECT_URI}`);
 
 databaseConnection()
   .then(() => {
@@ -30,20 +38,40 @@ databaseConnection()
   });
 
 
+// Dynamic CORS origins based on environment
+const getAllowedOrigins = (): string[] => {
+  const baseOrigins: string[] = [];
+
+  if (FRONTEND_URL) {
+    baseOrigins.push(FRONTEND_URL);
+  }
+  baseOrigins.push(`http://localhost:${PORT}`);
+
+  if (!isProduction) {
+    // Development: Allow localhost and common local network IPs
+    return [
+      ...baseOrigins,
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "http://192.168.0.101:3000",
+      "http://192.168.0.103:3000",
+      "http://172.16.21.144:3000",
+      "http://192.168.0.101:5173",
+      "http://192.168.0.103:5173",
+      "http://172.16.21.144:5173",
+    ];
+  } else {
+    // Production: Only allow specific origins
+    return [
+      ...baseOrigins,
+      "http://13.62.121.217:3000",
+      "http://13.62.121.217:5173",
+    ];
+  }
+};
+
 const corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://192.168.0.101:3000",
-    "http://192.168.0.103:3000",
-    "http://172.16.21.144:3000",
-    "http://192.168.0.103:3000",
-    "http://192.168.0.101:5173",
-    "http://192.168.0.103:5173",
-    "http://172.16.21.144:5173",
-    "http://192.168.0.103:5173",
-    "0.0.0.0",
-  ], 
+  origin: getAllowedOrigins(),
   methods: "GET,POST,PUT,PATCH,DELETE",
   allowedHeaders: "Content-Type, Authorization, x-csrf-token, x-client",
   credentials: true,
