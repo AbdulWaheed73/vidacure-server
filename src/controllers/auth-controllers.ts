@@ -50,10 +50,10 @@ export const initiateLogin = (req: Request, res: Response): void => {
 
     res.cookie("oauth_state", state, {
       httpOnly: true,
-      secure: false, 
+      secure: false,
       sameSite: 'lax',
       path: '/',
-      domain: undefined,
+      domain: process.env.NODE_ENV === 'production' ? '13.62.121.217' : undefined,
       maxAge: Number(process.env.TTL),
     });
 
