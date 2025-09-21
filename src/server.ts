@@ -59,6 +59,7 @@ const getAllowedOrigins = (): string[] => {
       "http://192.168.0.101:5173",
       "http://192.168.0.103:5173",
       "http://172.16.21.144:5173",
+      "*",
     ];
   } else {
     // Production: Only allow specific origins
@@ -67,6 +68,8 @@ const getAllowedOrigins = (): string[] => {
       "http://13.62.121.217:3000",
       "http://13.62.121.217:5173",
       "https://vidacure-web.vercel.app",
+      "http://localhost:5173",
+      "*"
     ];
   }
 };
