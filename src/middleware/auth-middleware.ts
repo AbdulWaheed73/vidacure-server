@@ -61,6 +61,7 @@ export function requireAuth(
       token ? `Token present (${token.substring(0, 20)}...)` : "No token found"
     );
   } else {
+     console.log("cookies !!: ", req.cookies);
     // For web and mobile browsers, use cookie
     token = req.cookies?.app_token;
     console.log(
