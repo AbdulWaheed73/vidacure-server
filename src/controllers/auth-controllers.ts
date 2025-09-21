@@ -50,7 +50,8 @@ export const initiateLogin = (req: Request, res: Response): void => {
 
     res.cookie("oauth_state", state, {
       httpOnly: true,
-      secure: Boolean(process.env.COOKIE_SECURE), 
+      secure: Boolean(process.env.COOKIE_SECURE),
+      sameSite: 'none', // Required for cross-origin requests
       maxAge: Number(process.env.TTL),
     });
 
@@ -183,7 +184,7 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
         const auditReq = {
           ...req,
           user: { userId: 'unknown', role: 'unknown' }
-        } as any;
+        } as AuthenticatedRequest;
         
         await auditDatabaseError(auditReq, "user_login_mobile_failed", "READ", error, undefined, 
                                { authMethod: "bankid_mobile", ssn: criiptoUserClaims?.ssn ? "provided" : "missing" });
@@ -295,14 +296,16 @@ export const handleCallback = async (
     // Store app JWT in httpOnly cookie
     res.cookie("app_token", appJWT, {
       httpOnly: true,
-      secure: Boolean(process.env.SECURE), // Set to true in production with HTTPS
+      secure: Boolean(process.env.COOKIE_SECURE), // Set to true in production with HTTPS
+      sameSite: 'none', // Required for cross-origin requests
       maxAge: Number(process.env.TTL), // 30 minutes
     });
 
     // Store CSRF token in a non-httpOnly cookie so frontend can access it
     res.cookie("csrf_token", csrfToken, {
       httpOnly: false, // Allow frontend to read this
-      secure: Boolean(process.env.SECURE), // Set to true in production with HTTPS
+      secure: Boolean(process.env.COOKIE_SECURE), // Set to true in production with HTTPS
+      sameSite: 'none', // Required for cross-origin requests
       maxAge: Number(process.env.TTL), // 30 minutes
     });
 
@@ -319,7 +322,7 @@ export const handleCallback = async (
       const auditReq = {
         ...req,
         user: { userId: 'unknown', role: 'unknown' }
-      } as any;
+      } as AuthenticatedRequest;
       
       await auditDatabaseError(auditReq, "user_login_web_callback_failed", "READ", error, undefined, 
                              { authMethod: "bankid_web", step: "callback" });

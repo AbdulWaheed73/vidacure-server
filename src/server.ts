@@ -66,6 +66,7 @@ const getAllowedOrigins = (): string[] => {
       ...baseOrigins,
       "http://13.62.121.217:3000",
       "http://13.62.121.217:5173",
+      "https://vidacure-web.vercel.app",
     ];
   }
 };
