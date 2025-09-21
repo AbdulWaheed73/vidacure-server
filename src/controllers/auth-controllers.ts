@@ -11,6 +11,8 @@ import {
   getAppConfig,
   getRedirectUri,
   getClientSecret,
+  storeOAuthState,
+  validateAndRemoveOAuthState,
 } from "../services/auth-service";
 import { CriiptoUserClaims } from "../types/generic-types";
 import Patient from "../schemas/patient-schema";
@@ -48,15 +50,9 @@ export const initiateLogin = (req: Request, res: Response): void => {
       acr_values: acrValues,
     });
 
-    res.cookie("oauth_state", state, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'none',
-      path: '/',
-      maxAge: Number(process.env.TTL),
-    });
-
-    console.log("Setting oauth_state cookie:", state)
+    // Store state in memory instead of cookies (for HTTP environments)
+    storeOAuthState(state);
+    console.log("Storing oauth_state in memory:", state)
 
     res.redirect(url.toString());
   } catch (error) {
@@ -227,21 +223,18 @@ export const handleCallback = async (
       (req.query?.error as string) || (req.body?.error as string);
 
     // Validate state parameter (CSRF protection)
-    const storedState = req.cookies.oauth_state;
     console.log("🔍 State validation:", {
       receivedState: state,
-      storedState: storedState,
-      allCookies: req.cookies
+      validatingFromMemory: true
     });
 
-    if (!state || state !== storedState) {
-      console.error("❌ Invalid state parameter");
-      res.status(400).json({ error: "Invalid state parameter" });
+    if (!state || !validateAndRemoveOAuthState(state)) {
+      console.error("❌ Invalid or expired state parameter");
+      res.status(400).json({ error: "Invalid or expired state parameter" });
       return;
     }
 
-    // Clear state cookie
-    res.clearCookie("oauth_state");
+    console.log("✅ State validation successful");
 
     if (error) {
       console.error("❌ OAuth error:", error);
