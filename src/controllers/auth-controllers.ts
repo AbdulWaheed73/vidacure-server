@@ -51,9 +51,8 @@ export const initiateLogin = (req: Request, res: Response): void => {
     res.cookie("oauth_state", state, {
       httpOnly: true,
       secure: false,
-      sameSite: 'lax',
+      sameSite: 'none',
       path: '/',
-      domain: process.env.NODE_ENV === 'production' ? '13.62.121.217' : undefined,
       maxAge: Number(process.env.TTL),
     });
 
@@ -301,8 +300,7 @@ export const handleCallback = async (
     res.cookie("app_token", appJWT, {
       httpOnly: true,
       secure: Boolean(process.env.SECURE),
-      sameSite: 'lax',
-      domain: process.env.NODE_ENV === 'production' ? '13.62.121.217' : undefined,
+      sameSite: 'none',
       maxAge: Number(process.env.TTL),
     });
 
@@ -310,8 +308,7 @@ export const handleCallback = async (
     res.cookie("csrf_token", csrfToken, {
       httpOnly: false,
       secure: Boolean(process.env.SECURE),
-      sameSite: 'lax',
-      domain: process.env.NODE_ENV === 'production' ? '13.62.121.217' : undefined,
+      sameSite: 'none',
       maxAge: Number(process.env.TTL),
     });
 
