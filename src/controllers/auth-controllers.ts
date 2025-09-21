@@ -228,6 +228,12 @@ export const handleCallback = async (
 
     // Validate state parameter (CSRF protection)
     const storedState = req.cookies.oauth_state;
+    console.log("🔍 State validation:", {
+      receivedState: state,
+      storedState: storedState,
+      allCookies: req.cookies
+    });
+
     if (!state || state !== storedState) {
       console.error("❌ Invalid state parameter");
       res.status(400).json({ error: "Invalid state parameter" });
