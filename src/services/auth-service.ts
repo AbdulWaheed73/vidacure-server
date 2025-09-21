@@ -20,22 +20,6 @@ const TTL: number = Number(process.env.TTL); // Default to 30 minutes in millise
 const configManager = new OpenIDConfigurationManager(`https://${domain}`, clientId_web);
 let appConfig: any;
 
-// In-memory store for OAuth states (for development/HTTP environments)
-const oauthStates = new Map<string, { timestamp: number }>();
-
-// Clean up old states every 10 minutes
-const cleanup = setInterval(() => {
-  const now = Date.now();
-  for (const [state, data] of oauthStates.entries()) {
-    if (now - data.timestamp > TTL) {
-      oauthStates.delete(state);
-    }
-  }
-}, 10 * 60 * 1000);
-
-// Prevent the interval from keeping the process alive
-cleanup.unref();
-
 // Utility functions
 export function hashSSN(ssn: string): string {
   return crypto.createHmac('sha256', SSN_HASH_SECRET)
@@ -58,23 +42,6 @@ export function generateCSRFToken(): string {
 
 export function generateRandomState(): string {
   return crypto.randomBytes(16).toString('hex');
-}
-
-export function storeOAuthState(state: string): void {
-  oauthStates.set(state, { timestamp: Date.now() });
-}
-
-export function validateAndRemoveOAuthState(state: string): boolean {
-  const stored = oauthStates.get(state);
-  if (!stored) return false;
-
-  // Check if state is not expired
-  const isValid = Date.now() - stored.timestamp < TTL;
-
-  // Remove state (one-time use)
-  oauthStates.delete(state);
-
-  return isValid;
 }
 
 export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise<{ user: PatientT | DoctorT, isNewUser: boolean }> {
