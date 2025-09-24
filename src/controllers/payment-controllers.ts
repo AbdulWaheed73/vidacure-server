@@ -178,8 +178,10 @@ export const createCheckoutSession = async (req: express.Request, res: express.R
       return res.status(404).json({ error: 'Patient not found' });
     }
 
-    const successUrl = `${process.env.FRONTEND_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${process.env.FRONTEND_URL}/subscription/canceled`;
+    const isProduction = process.env.NODE_ENV === 'production';
+    const frontendUrl = isProduction ? process.env.PROD_FRONTEND_URL : process.env.DEV_FRONTEND_URL;
+    const successUrl = `${frontendUrl}/subscription/success?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${frontendUrl}/subscription/canceled`;
 
     let customerId = patient.subscription?.stripeCustomerId;
 
@@ -333,7 +335,9 @@ export const createPortalSession = async (req: express.Request, res: express.Res
       return res.status(404).json({ error: 'No Stripe customer found' });
     }
 
-    const returnUrl = `${process.env.FRONTEND_URL}/subscription`;
+    const isProduction = process.env.NODE_ENV === 'production';
+    const frontendUrl = isProduction ? process.env.PROD_FRONTEND_URL : process.env.DEV_FRONTEND_URL;
+    const returnUrl = `${frontendUrl}/subscription`;
     const session = await stripeService.createPortalSession(patient.subscription.stripeCustomerId, returnUrl);
 
     res.json({ url: session.url });
