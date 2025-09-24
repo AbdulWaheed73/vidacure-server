@@ -59,7 +59,11 @@ const getAllowedOrigins = (): string[] => {
       "http://192.168.0.101:5173",
       "http://192.168.0.103:5173",
       "http://172.16.21.144:5173",
-      "*",
+      "http://www.vidacure.se",
+      "https://vidacure.se/",
+      "https://vidacure.se",
+      "https://vidacure.eu/",
+      "https://vidacure.eu",
     ];
   } else {
     // Production: Only allow specific origins
@@ -67,9 +71,11 @@ const getAllowedOrigins = (): string[] => {
       ...baseOrigins,
       "http://13.62.121.217:3000",
       "http://13.62.121.217:5173",
-      "https://vidacure-web.vercel.app",
-      "http://localhost:5173",
-      "*"
+      "http://www.vidacure.se",
+      "https://vidacure.se/",
+      "https://vidacure.se",
+      "https://vidacure.eu/",
+      "https://vidacure.eu",
     ];
   }
 };

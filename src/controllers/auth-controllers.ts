@@ -47,13 +47,15 @@ export const initiateLogin = (req: Request, res: Response): void => {
       response_mode: "query",
       acr_values: acrValues,
     });
-
+    console.log("\n\ngetRedirectUri(req): ", getRedirectUri(req));
     res.cookie("oauth_state", state, {
       httpOnly: true,
-      secure: Boolean(process.env.COOKIE_SECURE),
-      sameSite: 'none', // Required for cross-origin requests
+      secure: Boolean(process.env.SECURE),
+      sameSite: 'none',
       maxAge: Number(process.env.TTL),
     });
+
+    console.log("Setting oauth_state cookie:", state)
 
     res.redirect(url.toString());
   } catch (error) {
@@ -184,7 +186,7 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
         const auditReq = {
           ...req,
           user: { userId: 'unknown', role: 'unknown' }
-        } as AuthenticatedRequest;
+        } as any;
         
         await auditDatabaseError(auditReq, "user_login_mobile_failed", "READ", error, undefined, 
                                { authMethod: "bankid_mobile", ssn: criiptoUserClaims?.ssn ? "provided" : "missing" });
@@ -225,6 +227,8 @@ export const handleCallback = async (
 
     // Validate state parameter (CSRF protection)
     const storedState = req.cookies.oauth_state;
+
+
     if (!state || state !== storedState) {
       console.error("❌ Invalid state parameter");
       res.status(400).json({ error: "Invalid state parameter" });
@@ -296,17 +300,17 @@ export const handleCallback = async (
     // Store app JWT in httpOnly cookie
     res.cookie("app_token", appJWT, {
       httpOnly: true,
-      secure: Boolean(process.env.COOKIE_SECURE), // Set to true in production with HTTPS
-      sameSite: 'none', // Required for cross-origin requests
-      maxAge: Number(process.env.TTL), // 30 minutes
+      secure: Boolean(process.env.SECURE),
+      sameSite: 'none',
+      maxAge: Number(process.env.TTL),
     });
 
     // Store CSRF token in a non-httpOnly cookie so frontend can access it
     res.cookie("csrf_token", csrfToken, {
-      httpOnly: false, // Allow frontend to read this
-      secure: Boolean(process.env.COOKIE_SECURE), // Set to true in production with HTTPS
-      sameSite: 'none', // Required for cross-origin requests
-      maxAge: Number(process.env.TTL), // 30 minutes
+      httpOnly: false,
+      secure: Boolean(process.env.SECURE),
+      sameSite: 'none',
+      maxAge: Number(process.env.TTL),
     });
 
     // Redirect back to frontend with success message
@@ -322,7 +326,7 @@ export const handleCallback = async (
       const auditReq = {
         ...req,
         user: { userId: 'unknown', role: 'unknown' }
-      } as AuthenticatedRequest;
+      } as any;
       
       await auditDatabaseError(auditReq, "user_login_web_callback_failed", "READ", error, undefined, 
                              { authMethod: "bankid_web", step: "callback" });
