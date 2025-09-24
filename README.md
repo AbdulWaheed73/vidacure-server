@@ -32,7 +32,7 @@ SSN_HASH_SECRET=your-ssn-hash-secret-change-in-production
 PORT=3000
 
 # MongoDB Configuration (if needed later)
-MONGODB_URI=mongodb+srv://waheed:waheed12345@cluster0.dnuwlq6.mongodb.net/
+MONGODB_URI=
 ```
 
 ### 2. Install Dependencies
