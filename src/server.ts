@@ -64,6 +64,7 @@ const getAllowedOrigins = (): string[] => {
       "https://vidacure.se",
       "https://vidacure.eu/",
       "https://vidacure.eu",
+      "http://www.vidacure.eu",
     ];
   } else {
     // Production: Only allow specific origins
@@ -76,6 +77,7 @@ const getAllowedOrigins = (): string[] => {
       "https://vidacure.se",
       "https://vidacure.eu/",
       "https://vidacure.eu",
+      "http://www.vidacure.eu",
     ];
   }
 };
