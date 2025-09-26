@@ -24,7 +24,7 @@ const PatientSchema: Schema = new Schema(
     // Patient-specific fields
     dateOfBirth: { type: Date, required: false },
     gender: { type: String, enum: ["male", "female", "other"], required: false },
-    email: { type: String, required: true, unique: true },
+    email: { type: String, required: false, unique: true },
 
     weightHistory: [
       {
