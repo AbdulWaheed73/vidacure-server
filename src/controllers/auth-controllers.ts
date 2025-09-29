@@ -115,6 +115,9 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
     let criiptoUserClaims: CriiptoUserClaims;
 
     try {
+      console.log("\n\n")
+      console.log("JWT :" , criiptoJWT);
+      console.log("\n\n")
       criiptoUserClaims = jwt.decode(criiptoJWT) as CriiptoUserClaims;
 
       if (!criiptoUserClaims) {
