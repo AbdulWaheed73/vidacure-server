@@ -1,6 +1,6 @@
 import { Response } from "express";
 import { AuthenticatedRequest } from "../types/generic-types";
-import { createSingleUseLink, getCalendlyUserByEmail, getScheduledEvents, getScheduledEventsByInviteeEmail } from "../services/calendly-service";
+import { createSingleUseLink, getCalendlyUserByEmail, getScheduledEvents, getScheduledEventsByInviteeEmail, getEventInvitees } from "../services/calendly-service";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
 import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
@@ -353,7 +353,7 @@ export const getDoctorMeetings = async (req: AuthenticatedRequest, res: Response
     if (endDate) filters.maxStartTime = new Date(endDate as string).toISOString();
 
     // Fetch scheduled events
-    const meetings = await getScheduledEvents(doctorUri, filters);
+    const { collection: meetings } = await getScheduledEvents(doctorUri, filters);
 
     // Transform data for frontend
     const formattedMeetings = meetings.map((meeting: any) => ({
@@ -485,6 +485,7 @@ export const getPatientMeetings = async (req: AuthenticatedRequest, res: Respons
 export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const doctorId = req.user?.userId;
+    const { pageToken } = req.query;
 
     if (!doctorId) {
       res.status(401).json({ error: "Doctor authentication required" });
@@ -521,34 +522,42 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
       });
     }
 
-    // Fetch scheduled events for this doctor
-    const meetings = await getScheduledEvents(doctorUri, {
+    // Fetch scheduled events for this doctor with pagination (5 per batch)
+    const { collection: meetings, pagination } = await getScheduledEvents(doctorUri, {
       status: 'active',
       sort: 'start_time:asc',
-      count: 100
+      count: 5,
+      pageToken: pageToken as string | undefined
     });
 
-    // Transform data for frontend
-    const formattedMeetings = meetings.map((meeting: any) => ({
-      id: meeting.uri,
-      patientName: meeting.name,
-      patientEmail: meeting.email,
-      startTime: meeting.start_time,
-      endTime: meeting.end_time,
-      status: meeting.status,
-      meetingUrl: meeting.location?.join_url,
-      eventType: meeting.event_type?.name,
-      createdAt: meeting.created_at,
-      cancelUrl: meeting.cancel_url,
-      rescheduleUrl: meeting.reschedule_url,
-      calendlyUserName: meeting.event_memberships?.[0]?.user_name || null,
-      calendlyUserEmail: meeting.event_memberships?.[0]?.user_email || null
-    }));
-    console.log("meetings !!!: ", meetings[0])
+    // Fetch invitee data for each meeting in the batch
+    const meetingsWithInvitees = await Promise.all(
+      meetings.map(async (meeting: any) => {
+        const invitees = await getEventInvitees(meeting.uri);
+        const primaryInvitee = invitees[0] || {};
+
+        return {
+          id: meeting.uri,
+          inviteeName: primaryInvitee.name || 'Unknown',
+          inviteeEmail: primaryInvitee.email || '',
+          startTime: meeting.start_time,
+          endTime: meeting.end_time,
+          status: meeting.status,
+          meetingUrl: meeting.location?.join_url || null,
+          eventType: meeting.name || 'Appointment',
+          createdAt: meeting.created_at,
+          cancelUrl: meeting.cancel_url || null,
+          rescheduleUrl: meeting.reschedule_url || null,
+          calendlyHostName: meeting.event_memberships?.[0]?.user_name || null,
+          calendlyHostEmail: meeting.event_memberships?.[0]?.user_email || null
+        };
+      })
+    );
 
     await auditDatabaseOperation(req, "get_doctor_own_meetings", "READ", doctorId, {
       doctorId,
-      meetingsCount: formattedMeetings.length
+      meetingsCount: meetingsWithInvitees.length,
+      hasMorePages: !!pagination.next_page_token
     });
 
     res.status(200).json({
@@ -557,8 +566,12 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
         name: doctor.name,
         email: doctor.email
       },
-      meetings: formattedMeetings,
-      count: formattedMeetings.length
+      meetings: meetingsWithInvitees,
+      count: meetingsWithInvitees.length,
+      pagination: {
+        nextPageToken: pagination.next_page_token || null,
+        hasMore: !!pagination.next_page_token
+      }
     });
 
   } catch (error) {

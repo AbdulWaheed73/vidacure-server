@@ -144,6 +144,7 @@ export async function getScheduledEvents(userUri: string, filters: {
   count?: number;
   minStartTime?: string;
   maxStartTime?: string;
+  pageToken?: string;
 } = {}) {
   const params: any = {
     user: userUri,
@@ -151,13 +152,18 @@ export async function getScheduledEvents(userUri: string, filters: {
     ...(filters.sort && { sort: filters.sort }),
     ...(filters.count && { count: filters.count.toString() }),
     ...(filters.minStartTime && { min_start_time: filters.minStartTime }),
-    ...(filters.maxStartTime && { max_start_time: filters.maxStartTime })
+    ...(filters.maxStartTime && { max_start_time: filters.maxStartTime }),
+    ...(filters.pageToken && { page_token: filters.pageToken })
   };
 
   const response = await makeCalendlyRequest('/scheduled_events', {
     params
   });
-  return response.collection || [];
+
+  return {
+    collection: response.collection || [],
+    pagination: response.pagination || {}
+  };
 }
 
 export async function getScheduledEventsByInviteeEmail(inviteeEmail: string) {
@@ -176,4 +182,17 @@ export async function getScheduledEventsByInviteeEmail(inviteeEmail: string) {
   });
   console.log("response of the scheduled meetings for : ", inviteeEmail, "\n", response);
   return response.collection || [];
+}
+
+export async function getEventInvitees(eventUri: string) {
+  try {
+    // Extract the UUID from the event URI
+    // eventUri format: https://api.calendly.com/scheduled_events/{uuid}
+    const eventUuid = eventUri.split('/').pop();
+    const response = await makeCalendlyRequest(`/scheduled_events/${eventUuid}/invitees`);
+    return response.collection || [];
+  } catch (error: any) {
+    console.error(`Error fetching invitees for event ${eventUri}:`, error.message);
+    return [];
+  }
 }
