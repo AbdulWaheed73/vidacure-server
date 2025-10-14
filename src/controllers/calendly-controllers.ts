@@ -540,7 +540,9 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
       eventType: meeting.event_type?.name,
       createdAt: meeting.created_at,
       cancelUrl: meeting.cancel_url,
-      rescheduleUrl: meeting.reschedule_url
+      rescheduleUrl: meeting.reschedule_url,
+      calendlyUserName: meeting.event_memberships?.[0]?.user_name || null,
+      calendlyUserEmail: meeting.event_memberships?.[0]?.user_email || null
     }));
 
     await auditDatabaseOperation(req, "get_doctor_own_meetings", "READ", doctorId, {
