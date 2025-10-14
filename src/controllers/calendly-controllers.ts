@@ -525,7 +525,7 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
     // Fetch scheduled events for this doctor with pagination (5 per batch)
     const { collection: meetings, pagination } = await getScheduledEvents(doctorUri, {
       status: 'active',
-      sort: 'start_time:asc',
+      sort: 'start_time:desc',
       count: 5,
       pageToken: pageToken as string | undefined
     });
