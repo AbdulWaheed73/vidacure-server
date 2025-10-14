@@ -544,6 +544,7 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
       calendlyUserName: meeting.event_memberships?.[0]?.user_name || null,
       calendlyUserEmail: meeting.event_memberships?.[0]?.user_email || null
     }));
+    console.log("meetings !!!: ", meetings[0])
 
     await auditDatabaseOperation(req, "get_doctor_own_meetings", "READ", doctorId, {
       doctorId,
