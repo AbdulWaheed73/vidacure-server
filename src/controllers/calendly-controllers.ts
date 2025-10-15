@@ -485,11 +485,25 @@ export const getPatientMeetings = async (req: AuthenticatedRequest, res: Respons
 export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const doctorId = req.user?.userId;
-    const { pageToken } = req.query;
+    const { pageToken, count } = req.query;
 
     if (!doctorId) {
       res.status(401).json({ error: "Doctor authentication required" });
       return;
+    }
+
+    // Validate count parameter
+    let meetingCount = 5; // default
+    if (count) {
+      const parsedCount = Number(count);
+      if (isNaN(parsedCount) || parsedCount < 1 || parsedCount > 100) {
+        res.status(400).json({
+          error: "Count must be a number between 1 and 100",
+          received: count
+        });
+        return;
+      }
+      meetingCount = parsedCount;
     }
 
     // Get doctor with Calendly configuration
@@ -522,11 +536,11 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
       });
     }
 
-    // Fetch scheduled events for this doctor with pagination (5 per batch)
+    // Fetch scheduled events for this doctor with pagination (dynamic count)
     const { collection: meetings, pagination } = await getScheduledEvents(doctorUri, {
       status: 'active',
       sort: 'start_time:desc',
-      count: 5,
+      count: meetingCount,
       pageToken: pageToken as string | undefined
     });
 
