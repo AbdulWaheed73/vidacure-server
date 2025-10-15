@@ -35,7 +35,7 @@ const PatientSchema: Schema = new Schema(
       }
     ],
 
-    height: { type: Number, required: false },
+    height: { type: Number, required: true },
     bmi: { type: Number },
 
     doctor: { type: Types.ObjectId, ref: "Doctor" },

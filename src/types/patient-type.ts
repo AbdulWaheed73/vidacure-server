@@ -22,7 +22,7 @@ export type PatientT = {
     notes?: string;
   }[];
 
-  height?: number;
+  height: number;
   bmi?: number;
 
   doctor?: Types.ObjectId; // ref: Doctor

@@ -283,7 +283,8 @@ export const getWeightHistory = async (req: AuthenticatedRequest, res: Response)
       }));
 
     res.status(200).json({
-      weightHistory: sortedHistory
+      weightHistory: sortedHistory,
+      height: patient.height // Include patient height for BMI calculation (required field)
     });
   } catch (error) {
     console.error("Error fetching weight history:", error);
@@ -292,10 +293,10 @@ export const getWeightHistory = async (req: AuthenticatedRequest, res: Response)
   }
 };
 
-// Update patient profile (e.g., email)
+// Update patient profile (e.g., email, height)
 export const updateProfile = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { email } = req.body;
+    const { email, height } = req.body;
     const userId = req.user?.userId;
 console.log("\n\n\nupdateProfile called with:", req.body);
     if (!userId) {
@@ -318,9 +319,24 @@ console.log("\n\n\nupdateProfile called with:", req.body);
       patient.email = email;
     }
 
+    // Update height (required field, in cm)
+    if (height !== undefined) {
+      const heightNum = parseFloat(height);
+      if (isNaN(heightNum) || heightNum <= 0 || heightNum > 300) {
+        res.status(400).json({ error: "Invalid height value. Must be between 1 and 300 cm" });
+        return;
+      }
+      patient.height = heightNum;
+    } else if (!patient.height) {
+      // If no height provided and patient doesn't have one, require it
+      res.status(400).json({ error: "Height is required" });
+      return;
+    }
+
     await patient.save();
     await auditDatabaseOperation(req, "update_profile_save", "UPDATE", userId, {
-      emailUpdated: email !== undefined
+      emailUpdated: email !== undefined,
+      heightUpdated: height !== undefined
     });
 
     res.status(200).json({
