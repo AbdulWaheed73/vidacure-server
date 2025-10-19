@@ -29,7 +29,17 @@ export default [
       '@typescript-eslint': tseslint
     },
     rules: {
-      '@typescript-eslint/no-unused-vars': 'error',
+      'no-unused-vars': 'off', // Turn off base rule as it conflicts with TS version
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          varsIgnorePattern: '^_',
+          argsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
+          // Ignore enum members (they're accessible via the enum object)
+          args: 'after-used'
+        }
+      ],
       '@typescript-eslint/explicit-function-return-type': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn',
       'no-console': 'off',

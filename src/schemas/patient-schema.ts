@@ -95,6 +95,11 @@ const PatientSchema: Schema = new Schema(
         currentWeight: { type: Number, required: true },
         hasSideEffects: { type: Boolean, required: true },
         sideEffectsDescription: { type: String, required: false },
+        medicationName: { type: String, required: false },
+        dosage: { type: String, required: false },
+        usageInstructions: { type: String, required: false },
+        dateIssued: { type: Date, required: false },
+        validTill: { type: Date, required: false },
         createdAt: { type: Date, default: Date.now },
         updatedAt: { type: Date, default: Date.now }
       }

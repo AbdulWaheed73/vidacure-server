@@ -2,6 +2,7 @@ import { Response } from "express";
 import PatientSchema from "../schemas/patient-schema";
 import { AuthenticatedRequest } from "../types/generic-types";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
+import { PrescriptionRequestStatus } from "../types/prescription-types";
 
 // Create prescription request
 export const createPrescriptionRequest = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -35,7 +36,7 @@ export const createPrescriptionRequest = async (req: AuthenticatedRequest, res: 
     await auditDatabaseOperation(req, "create_prescription_request_find_patient", "READ", userId);
 
     const newRequest = {
-      status: "pending" as const,
+      status: PrescriptionRequestStatus.PENDING,
       currentWeight,
       hasSideEffects,
       sideEffectsDescription: hasSideEffects ? sideEffectsDescription : undefined,
@@ -103,7 +104,7 @@ export const getPrescriptionRequests = async (req: AuthenticatedRequest, res: Re
 export const updatePrescriptionRequestStatus = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { requestId } = req.params;
-    const { status } = req.body;
+    const { status, medicationName, dosage, usageInstructions, dateIssued, validTill } = req.body;
     const userId = req.user?.userId;
 
     if (!userId) {
@@ -111,7 +112,8 @@ export const updatePrescriptionRequestStatus = async (req: AuthenticatedRequest,
       return;
     }
 
-    if (!["pending", "approved", "denied", "under_review"].includes(status)) {
+    const validStatuses = Object.values(PrescriptionRequestStatus);
+    if (!validStatuses.includes(status)) {
       res.status(400).json({ error: "Invalid status value" });
       return;
     }
@@ -139,6 +141,13 @@ export const updatePrescriptionRequestStatus = async (req: AuthenticatedRequest,
     const oldStatus = request.status;
     request.status = status;
     request.updatedAt = new Date();
+
+    // Update prescription details if provided
+    if (medicationName) request.medicationName = medicationName;
+    if (dosage) request.dosage = dosage;
+    if (usageInstructions) request.usageInstructions = usageInstructions;
+    if (dateIssued) request.dateIssued = new Date(dateIssued);
+    if (validTill) request.validTill = new Date(validTill);
 
     await patient.save();
 

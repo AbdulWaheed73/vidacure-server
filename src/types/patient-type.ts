@@ -67,6 +67,11 @@ export type PatientT = {
     currentWeight: number;
     hasSideEffects: boolean;
     sideEffectsDescription?: string;
+    medicationName?: string;
+    dosage?: string;
+    usageInstructions?: string;
+    dateIssued?: Date;
+    validTill?: Date;
     createdAt: Date;
     updatedAt: Date;
   }[];
