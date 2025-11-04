@@ -3,7 +3,9 @@ import {
   getDoctorDashboard,
   getDoctorAppointments,
   getDoctorPrescriptions,
-  getDoctorInbox
+  getDoctorInbox,
+  getDoctorPatients,
+  getPatientProfile
 } from "../controllers/doctor-controllers";
 import { updatePrescriptionRequestStatus } from "../controllers/prescription-controllers";
 
@@ -14,6 +16,8 @@ router.get("/dashboard", getDoctorDashboard);
 router.get("/appointments", getDoctorAppointments);
 router.get("/prescriptions", getDoctorPrescriptions);
 router.get("/inbox", getDoctorInbox);
+router.get("/patients", getDoctorPatients);
+router.get("/patient-profile", getPatientProfile);
 
 // Prescription management routes
 router.put("/prescription-requests/:requestId/status", updatePrescriptionRequestStatus);
