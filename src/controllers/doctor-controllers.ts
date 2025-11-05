@@ -53,7 +53,6 @@ export async function getDoctorAppointments(
   res: Response
 ): Promise<void> {
   try {
-    const doctorId = req.user?.userId;
     
     // Dummy appointments data
     const appointments = [
@@ -389,7 +388,6 @@ export async function getDoctorInbox(
   res: Response
 ): Promise<void> {
   try {
-    const doctorId = req.user?.userId;
     
     // Dummy inbox data
     const messages = [
