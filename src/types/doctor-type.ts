@@ -25,6 +25,9 @@ export type DoctorT = {
     premium: string;
   };
 
+  // Stream Chat related fields
+  assignedChannels?: string[];
+
   createdAt: Date;
   updatedAt: Date;
 };

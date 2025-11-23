@@ -48,23 +48,23 @@ export const streamChatApi = {
   /**
    * Create or get a patient's medical channel and update database relations
    */
-  async getOrCreatePatientChannel(patientId: string, doctorId: string): Promise<string> {
+  async getOrCreatePatientChannel(patientId: string, doctorId: string): Promise<{ id: string, created: boolean }> {
     const channelId = `patient-${patientId}-medical`;
-    
+
     // Update patient's doctor field and channel ID in database
-    await PatientSchema.findByIdAndUpdate(patientId, { 
+    await PatientSchema.findByIdAndUpdate(patientId, {
       doctor: doctorId,
       chatChannelId: channelId
     });
 
     // Add patient to doctor's patients array and add channel to doctor's assigned channels
     await DoctorSchema.findByIdAndUpdate(doctorId, {
-      $addToSet: { 
+      $addToSet: {
         patients: patientId,
         assignedChannels: channelId
       }
     });
-    
+
     const client = getStreamClient();
     const channel = client.channel('messaging', channelId, {
       created_by_id: patientId,
@@ -72,7 +72,7 @@ export const streamChatApi = {
     });
 
     await channel.create();
-    return channelId;
+    return { id: channelId, created: true };
   },
 
   /**
@@ -229,3 +229,16 @@ export const streamChatApi = {
     await client.deactivateUser(userId, { mark_messages_deleted: false });
   }
 };
+
+// Export individual functions for convenience
+export const {
+  generateToken,
+  createStreamUser,
+  getOrCreatePatientChannel,
+  reassignDoctor,
+  getDoctorChannels,
+  getPatientChannel,
+  sendSystemMessage,
+  deleteUser,
+  deactivateUser
+} = streamChatApi;

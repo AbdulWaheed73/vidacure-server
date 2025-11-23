@@ -4,12 +4,13 @@ import cookieParser from "cookie-parser";
 import databaseConnection from "./utils/database-connection";
 import { initializeAuth } from "./services/auth-service";
 import authRoutes from "./routes/auth-routes";
-// import adminRoutes from "./routes/admin-routes";
 import patientRoutes from "./routes/patient-routes";
 import doctorRoutes from "./routes/doctor-routes";
 import paymentRoutes from "./routes/payment-routes";
 import chatRoutes from "./routes/chat-routes";
 import calendlyRoutes from "./routes/calendly-routes";
+import adminRoutes from "./routes/admin-routes";
+import adminAuthRoutes from "./routes/admin-auth-routes";
 import prescriptionRoutes from "./routes/prescription-routes";
 import { requireAuth, requireCSRF, requireRole } from "./middleware/auth-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
@@ -121,6 +122,12 @@ app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireR
 app.use("/api/chat", requireAuth, auditMiddleware, chatRoutes);
 // Calendly routes - accessible by both patients and doctors
 app.use("/api/calendly", requireAuth, auditMiddleware, requireCSRF, calendlyRoutes);
+
+// Admin authentication routes - separate from regular auth
+app.use("/api/admin/auth", adminAuthRoutes);
+
+// Admin panel routes - protected by admin auth middleware
+app.use("/api/admin", adminRoutes);
 
 app.post('/1401621/chat', express.raw({type: 'application/json'}), (req, res) => {
   console.log("\n\n\nheyy im hit !!!\n\n\n\n");

@@ -229,6 +229,47 @@ export const stripeService = {
       customer: customerId,
     });
   },
+
+  // Admin-specific methods for fetching detailed subscription information
+  getDetailedSubscriptionInfo: async (subscriptionId: string) => {
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ['default_payment_method', 'latest_invoice', 'customer'],
+    });
+    return subscription;
+  },
+
+  getCustomerDefaultPaymentMethod: async (customerId: string) => {
+    const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
+
+    if (!customer.invoice_settings?.default_payment_method) {
+      return null;
+    }
+
+    const paymentMethodId = typeof customer.invoice_settings.default_payment_method === 'string'
+      ? customer.invoice_settings.default_payment_method
+      : customer.invoice_settings.default_payment_method.id;
+
+    return await stripe.paymentMethods.retrieve(paymentMethodId);
+  },
+
+  getUpcomingInvoice: async (customerId: string) => {
+    try {
+      return await stripe.invoices.createPreview({
+        customer: customerId,
+      });
+    } catch (error) {
+      // No upcoming invoice found (e.g., subscription canceled or no active subscription)
+      return null;
+    }
+  },
+
+  getCustomerPaymentMethods: async (customerId: string) => {
+    const paymentMethods = await stripe.paymentMethods.list({
+      customer: customerId,
+      type: 'card',
+    });
+    return paymentMethods.data;
+  },
 };
 
 export default stripeService;

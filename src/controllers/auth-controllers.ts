@@ -50,8 +50,8 @@ export const initiateLogin = (req: Request, res: Response): void => {
     console.log("\n\ngetRedirectUri(req): ", getRedirectUri(req));
     res.cookie("oauth_state", state, {
       httpOnly: true,
-      secure: Boolean(process.env.SECURE),
-      sameSite: 'none',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: Number(process.env.TTL),
     });
 
@@ -172,6 +172,9 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
         userId: user._id?.toString(),
         name: user.name,
         role: user.role,
+        ...(user.role === 'patient' && {
+          hasCompletedOnboarding: user.hasCompletedOnboarding || false,
+        }),
       },
       // Note: No CSRF token needed for mobile apps
     });
@@ -303,16 +306,16 @@ export const handleCallback = async (
     // Store app JWT in httpOnly cookie
     res.cookie("app_token", appJWT, {
       httpOnly: true,
-      secure: Boolean(process.env.SECURE),
-      sameSite: 'none',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: Number(process.env.TTL),
     });
 
     // Store CSRF token in a non-httpOnly cookie so frontend can access it
     res.cookie("csrf_token", csrfToken, {
       httpOnly: false,
-      secure: Boolean(process.env.SECURE),
-      sameSite: 'none',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: Number(process.env.TTL),
     });
 
@@ -374,11 +377,13 @@ export const getCurrentUser = async (
     const existingCsrfToken = req.cookies.csrf_token;
 
     const userData = {
+      id: user._id?.toString(),
       name: user.name,
+      email: user.email || '',
       given_name: user.given_name,
       family_name: user.family_name,
       role: user.role,
-      userId: user._id?.toString(),
+      userId: user._id?.toString(), // Keep for backward compatibility
       lastLogin: user.lastLogin,
       hasCompletedOnboarding: user.hasCompletedOnboarding || false,
     };

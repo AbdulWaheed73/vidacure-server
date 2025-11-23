@@ -1,20 +1,57 @@
 import express from "express";
-import { requireAuth, requireRole } from "../middleware/auth-middleware";
+import { requireAdminAuth, requireAdminRole } from "../middleware/admin-auth-middleware";
+import {
+  getDashboardStats,
+  getAllPatients,
+  getAllDoctors,
+  reassignDoctor,
+  getUnassignedPatients,
+  getPatientSubscriptionDetails,
+  checkSSN,
+  convertPatientToDoctor,
+  addDoctor
+} from "../controllers/admin-controllers";
 
 const router = express.Router();
 
-// Admin routes - protected by authentication and role
-router.get("/users", requireAuth, requireRole('superadmin'), (req, res) => {
-  try {
-    // This would typically fetch users from the database
-    // For now, just return a success message
-    res.json({ 
-      message: "Admin access granted",
-      users: [] // You'll populate this with actual user data
-    });
-  } catch {
-    res.status(500).json({ error: "Failed to fetch users" });
-  }
+// All admin routes require admin authentication (admin_token)
+// Regular user tokens (app_token) are rejected
+router.use(requireAdminAuth);
+router.use(requireAdminRole(['admin', 'superadmin']));
+
+// Dashboard statistics
+router.get("/dashboard", getDashboardStats);
+
+// Get all patients with pagination
+router.get("/patients", getAllPatients);
+
+// Get detailed subscription information for a specific patient
+router.get("/patients/:patientId/subscription-details", getPatientSubscriptionDetails);
+
+// Get unassigned patients
+router.get("/unassigned-patients", getUnassignedPatients);
+
+// Get all doctors with patient details
+router.get("/doctors", getAllDoctors);
+
+// Reassign patient to new doctor
+router.post("/reassign-doctor", reassignDoctor);
+
+// Check SSN availability
+router.post("/check-ssn", checkSSN);
+
+// Convert patient to doctor
+router.post("/convert-patient-to-doctor", convertPatientToDoctor);
+
+// Add new doctor
+router.post("/add-doctor", addDoctor);
+
+// Legacy route - kept for backwards compatibility
+router.get("/users", (req, res) => {
+  res.json({
+    message: "Admin access granted. Use /api/admin/patients or /api/admin/doctors instead",
+    users: []
+  });
 });
 
 export default router;

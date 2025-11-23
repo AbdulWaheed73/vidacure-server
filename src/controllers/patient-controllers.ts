@@ -293,12 +293,60 @@ export const getWeightHistory = async (req: AuthenticatedRequest, res: Response)
   }
 };
 
+// Get patient profile
+export const getProfile = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      res.status(401).json({ error: "User not authenticated" });
+      return;
+    }
+
+    const patient = await PatientSchema.findById(userId);
+
+    if (!patient) {
+      await auditDatabaseError(req, "get_profile", "READ", new Error("Patient not found"), userId);
+      res.status(404).json({ error: "Patient not found" });
+      return;
+    }
+
+    await auditDatabaseOperation(req, "get_profile", "READ", userId);
+
+    // Extract date of birth from questionnaire Q2
+    const dobAnswer = patient.questionnaire.find(q => q.questionId === "Q2");
+    const dateOfBirth = dobAnswer?.answer || patient.dateOfBirth?.toISOString() || null;
+
+    res.status(200).json({
+      profile: {
+        userId: patient._id,
+        name: patient.name,
+        givenName: patient.given_name,
+        familyName: patient.family_name,
+        email: patient.email,
+        dateOfBirth: dateOfBirth,
+        gender: patient.gender,
+        height: patient.height,
+        bmi: patient.bmi,
+        role: patient.role,
+        hasCompletedOnboarding: patient.hasCompletedOnboarding,
+        createdAt: patient.createdAt,
+        updatedAt: patient.updatedAt
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching profile:", error);
+    await auditDatabaseError(req, "get_profile", "READ", error, req.user?.userId);
+    res.status(500).json({ error: "Error fetching profile" });
+  }
+};
+
 // Update patient profile (e.g., email, height)
 export const updateProfile = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { email, height } = req.body;
     const userId = req.user?.userId;
-console.log("\n\n\nupdateProfile called with:", req.body);
+// console.log("\n\n\nupdateProfile called with:", req.body);
     if (!userId) {
       res.status(401).json({ error: "User not authenticated" });
       return;

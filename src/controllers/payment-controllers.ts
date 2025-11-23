@@ -2,6 +2,7 @@ import express from "express";
 import stripeService from "../services/stripe-service";
 import PatientSchema from "../schemas/patient-schema";
 import Stripe from "stripe";
+import { assignDoctorRoundRobin } from "../services/doctor-assignment-service";
 
 // OPTION 1: Create Setup Intent for subscription (RECOMMENDED)
 export const createSetupIntent = async (req: express.Request, res: express.Response) => {
@@ -396,6 +397,18 @@ export const handleSuccessfulPayment = async (session: Stripe.Checkout.Session) 
 
     console.log('Successfully processed payment for patient:', patient._id);
 
+    // Auto-assign doctor if subscription is active and no doctor assigned
+    if (subscription.status === 'active' && !patient.doctor) {
+      console.log('[Auto-Assignment] Triggering doctor assignment for patient:', patient._id);
+      try {
+        await assignDoctorRoundRobin(patient._id.toString());
+        console.log('[Auto-Assignment] Successfully assigned doctor to patient:', patient._id);
+      } catch (assignError) {
+        console.error('[Auto-Assignment] Failed to assign doctor to patient:', patient._id, assignError);
+        // Don't throw - payment was successful, assignment can be done manually later
+      }
+    }
+
   } catch (error) {
     console.error('Error processing successful payment:', error);
   }
@@ -442,6 +455,18 @@ export const handleSubscriptionUpdate = async (subscription: Stripe.Subscription
     await patient.save();
 
     console.log('Successfully updated subscription for patient:', patient._id);
+
+    // Auto-assign doctor if subscription became active and no doctor assigned
+    if (subscription.status === 'active' && !patient.doctor) {
+      console.log('[Auto-Assignment] Triggering doctor assignment for patient:', patient._id);
+      try {
+        await assignDoctorRoundRobin(patient._id.toString());
+        console.log('[Auto-Assignment] Successfully assigned doctor to patient:', patient._id);
+      } catch (assignError) {
+        console.error('[Auto-Assignment] Failed to assign doctor to patient:', patient._id, assignError);
+        // Don't throw - subscription update was successful
+      }
+    }
 
   } catch (error) {
     console.error('Error processing subscription update:', error);
@@ -562,6 +587,18 @@ export const handleSetupIntentSucceeded = async (setupIntent: Stripe.SetupIntent
     await patient.save();
 
     console.log('Successfully created subscription from setup intent for patient:', patient._id);
+
+    // Auto-assign doctor if subscription is active and no doctor assigned
+    if (subscription.status === 'active' && !patient.doctor) {
+      console.log('[Auto-Assignment] Triggering doctor assignment for patient:', patient._id);
+      try {
+        await assignDoctorRoundRobin(patient._id.toString());
+        console.log('[Auto-Assignment] Successfully assigned doctor to patient:', patient._id);
+      } catch (assignError) {
+        console.error('[Auto-Assignment] Failed to assign doctor to patient:', patient._id, assignError);
+        // Don't throw - setup intent was successful
+      }
+    }
 
   } catch (error) {
     console.error('Error processing setup intent succeeded:', error);

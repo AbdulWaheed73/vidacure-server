@@ -137,14 +137,18 @@ export async function requireCSRF(
 }
 
 // Role-based access control
-export function requireRole(allowedRoles: string) {
+export function requireRole(allowedRoles: string | string[]) {
   return (
     req: AuthenticatedRequest,
     res: Response,
     next: NextFunction
   ): void => {
-    console.log("\n\n\nroleeeewewewewew: ", req?.user?.role, "\n\n\n")
-    if (!(allowedRoles === req?.user?.role)) {
+    // console.log("\n\n\nroleeeewewewewew: ", req?.user?.role, "\n\n\n")
+
+    const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
+    const userRole = req?.user?.role;
+
+    if (!userRole || !roles.includes(userRole)) {
       res.status(403).json({ error: "Insufficient permissions" });
       return;
     }

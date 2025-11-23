@@ -6,6 +6,7 @@ import {
   updateQuestionnaire,
   addWeightHistory,
   getWeightHistory,
+  getProfile,
   updateProfile
 } from "../controllers/patient-controllers";
 
@@ -24,6 +25,7 @@ router.post("/weight-history", addWeightHistory);
 router.get("/weight-history", getWeightHistory);
 
 // Profile routes
+router.get("/profile", getProfile);
 router.patch("/profile", updateProfile);
 
 export default router;

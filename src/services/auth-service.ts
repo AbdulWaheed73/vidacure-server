@@ -6,6 +6,7 @@ import Patient from "../schemas/patient-schema";
 import Doctor from "../schemas/doctor-schema";
 import { PatientT } from "../types/patient-type";
 import { DoctorT } from "../types/doctor-type";
+import { streamChatApi } from "./stream-chat-api";
 
 // Environment variables
 const domain: string = process.env.CRIIPTO_DOMAIN as string;
@@ -46,50 +47,94 @@ export function generateRandomState(): string {
 
 export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise<{ user: PatientT | DoctorT, isNewUser: boolean }> {
   const { ssn, name, given_name, family_name } = criiptoToken;
-  
+
   if (!ssn || !isValidSwedishSSN(ssn)) {
     throw new Error('Invalid or missing SSN from IdP');
   }
-  
+
   const ssnHash = hashSSN(ssn);
-  
+
   try {
-    // First, try to find existing patient by SSN hash
-    const existingPatient = await Patient.findOne({ ssnHash });
-    
-    if (existingPatient) {
-      // Update last login timestamp
-      existingPatient.lastLogin = new Date();
-      await existingPatient.save();
-      
-      console.log("🔐 Existing patient authenticated:", {
-        userId: existingPatient._id?.toString(),
-        name: existingPatient.name,
-        role: existingPatient.role,
-        lastLogin: existingPatient.lastLogin
-      });
-      
-      return { user: existingPatient, isNewUser: false };
-    }
-    
-    // Try to find existing doctor by SSN hash
+    // First, try to find existing doctor by SSN hash
     const existingDoctor = await Doctor.findOne({ ssnHash });
-    
+
     if (existingDoctor) {
+      // Check if doctor has placeholder names from admin creation
+      const hasPlaceholderName =
+        existingDoctor.name === 'Pending BankID Login' ||
+        existingDoctor.given_name === 'Pending' ||
+        existingDoctor.family_name === 'BankID';
+
+      // Update names if placeholders exist and BankID provides data
+      if (hasPlaceholderName && (name || given_name || family_name)) {
+        existingDoctor.name = name || `${given_name} ${family_name}`.trim();
+        existingDoctor.given_name = given_name || '';
+        existingDoctor.family_name = family_name || '';
+
+        console.log("✅ Updated doctor name from BankID:", {
+          userId: existingDoctor._id?.toString(),
+          oldName: 'Pending BankID Login',
+          newName: existingDoctor.name
+        });
+
+        // Update Stream Chat profile with new name
+        await streamChatApi.createStreamUser(existingDoctor);
+      }
+
       // Update last login timestamp
       existingDoctor.lastLogin = new Date();
       await existingDoctor.save();
-      
+
       console.log("🔐 Existing doctor authenticated:", {
         userId: existingDoctor._id?.toString(),
         name: existingDoctor.name,
         role: existingDoctor.role,
         lastLogin: existingDoctor.lastLogin
       });
-      
+
       return { user: existingDoctor, isNewUser: false };
     }
-    
+
+    // Second, try to find existing patient by SSN hash
+    const existingPatient = await Patient.findOne({ ssnHash });
+
+    if (existingPatient) {
+      // Check if patient has placeholder names (for consistency with doctor logic)
+      const hasPlaceholderName =
+        existingPatient.name === 'Pending BankID Login' ||
+        existingPatient.given_name === 'Pending' ||
+        existingPatient.family_name === 'BankID';
+
+      // Update names if placeholders exist and BankID provides data
+      if (hasPlaceholderName && (name || given_name || family_name)) {
+        existingPatient.name = name || `${given_name} ${family_name}`.trim();
+        existingPatient.given_name = given_name || '';
+        existingPatient.family_name = family_name || '';
+
+        console.log("✅ Updated patient name from BankID:", {
+          userId: existingPatient._id?.toString(),
+          oldName: 'Pending BankID Login',
+          newName: existingPatient.name
+        });
+
+        // Update Stream Chat profile with new name
+        await streamChatApi.createStreamUser(existingPatient);
+      }
+
+      // Update last login timestamp
+      existingPatient.lastLogin = new Date();
+      await existingPatient.save();
+
+      console.log("🔐 Existing patient authenticated:", {
+        userId: existingPatient._id?.toString(),
+        name: existingPatient.name,
+        role: existingPatient.role,
+        lastLogin: existingPatient.lastLogin
+      });
+
+      return { user: existingPatient, isNewUser: false };
+    }
+
     // User doesn't exist, create new patient (default role)
     const newPatient = new Patient({
       ssnHash,
@@ -101,9 +146,9 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
       weightHistory: [],
       questionnaire: []
     });
-    
+
     const savedPatient = await newPatient.save();
-    
+
     console.log("🆕 New patient created and authenticated:", {
       userId: savedPatient._id?.toString(),
       name: savedPatient.name,
@@ -111,9 +156,9 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
       ssnHash: savedPatient.ssnHash,
       createdAt: savedPatient.createdAt
     });
-    
+
     return { user: savedPatient, isNewUser: true };
-    
+
   } catch (error) {
     console.error("❌ Error in findOrCreateUser:", error);
     throw new Error(`Failed to authenticate user: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -129,7 +174,7 @@ export function createAppJWT(user: PatientT | DoctorT | BaseUser): string {
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + Math.floor(TTL / 1000) // Convert milliseconds to seconds
   };
-  
+
   return jwt.sign(payload, JWT_SECRET);
 }
 

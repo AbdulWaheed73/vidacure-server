@@ -382,83 +382,126 @@ export async function getPatientProfile(
   }
 }
 
-// Get doctor inbox/messages
-export async function getDoctorInbox(
+// Get doctor profile
+export async function getDoctorProfile(
   req: AuthenticatedRequest,
   res: Response
 ): Promise<void> {
   try {
-    
-    // Dummy inbox data
-    const messages = [
-      {
-        id: "msg-001",
-        patient: {
-          id: "pat-001",
-          name: "John Doe"
-        },
-        subject: "Question about medication",
-        preview: "I have a question about the new medication you prescribed...",
-        receivedDate: new Date().toISOString(),
-        status: "unread",
-        priority: "normal",
-        type: "question"
-      },
-      {
-        id: "msg-002",
-        patient: {
-          id: "pat-002",
-          name: "Jane Smith"
-        },
-        subject: "Appointment rescheduling",
-        preview: "I need to reschedule my appointment next week...",
-        receivedDate: new Date(Date.now() - 3600000 * 2).toISOString(), // 2 hours ago
-        status: "read",
-        priority: "high",
-        type: "appointment"
-      },
-      {
-        id: "msg-003",
-        patient: {
-          id: "pat-003",
-          name: "Bob Johnson"
-        },
-        subject: "Side effects concern",
-        preview: "I'm experiencing some side effects from the medication...",
-        receivedDate: new Date(Date.now() - 3600000 * 5).toISOString(), // 5 hours ago
-        status: "unread",
-        priority: "high",
-        type: "concern"
-      },
-      {
-        id: "msg-004",
-        patient: {
-          id: "pat-004",
-          name: "Alice Brown"
-        },
-        subject: "Thank you note",
-        preview: "Thank you for the excellent care during my visit...",
-        receivedDate: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-        status: "read",
-        priority: "low",
-        type: "feedback"
-      }
-    ];
+    const doctorId = req.user?.userId;
 
-    res.json({
-      success: true,
-      data: {
-        messages,
-        totalCount: messages.length,
-        unreadCount: messages.filter(msg => msg.status === 'unread').length,
-        highPriorityCount: messages.filter(msg => msg.priority === 'high').length
+    if (!doctorId) {
+      res.status(401).json({ error: "User not authenticated" });
+      return;
+    }
+
+    const doctor = await DoctorSchema.findById(doctorId);
+
+    if (!doctor) {
+      await auditDatabaseError(req, "get_doctor_profile", "READ", new Error("Doctor not found"), doctorId);
+      res.status(404).json({ error: "Doctor not found" });
+      return;
+    }
+
+    await auditDatabaseOperation(req, "get_doctor_profile", "READ", doctorId);
+
+    res.status(200).json({
+      profile: {
+        userId: doctor._id,
+        name: doctor.name,
+        givenName: doctor.given_name,
+        familyName: doctor.family_name,
+        email: doctor.email,
+        role: doctor.role,
+        // calendlyUserUri: doctor.calendlyUserUri,
+        // eventTypes: doctor.eventTypes,
+        createdAt: doctor.createdAt,
+        updatedAt: doctor.updatedAt
       }
     });
   } catch (error) {
-    console.error("Error fetching doctor inbox:", error);
-    res.status(500).json({
-      error: "Internal server error",
-      details: error instanceof Error ? error.message : "Unknown error"
-    });
+    console.error("Error fetching doctor profile:", error);
+    await auditDatabaseError(req, "get_doctor_profile", "READ", error, req.user?.userId);
+    res.status(500).json({ error: "Error fetching doctor profile" });
   }
 }
+
+// Get doctor inbox/messages
+// export async function getDoctorInbox(
+//   req: AuthenticatedRequest,
+//   res: Response
+// ): Promise<void> {
+//   try {
+
+//     const messages = [
+//       {
+//         id: "msg-001",
+//         patient: {
+//           id: "pat-001",
+//           name: "John Doe"
+//         },
+//         subject: "Question about medication",
+//         preview: "I have a question about the new medication you prescribed...",
+//         receivedDate: new Date().toISOString(),
+//         status: "unread",
+//         priority: "normal",
+//         type: "question"
+//       },
+//       {
+//         id: "msg-002",
+//         patient: {
+//           id: "pat-002",
+//           name: "Jane Smith"
+//         },
+//         subject: "Appointment rescheduling",
+//         preview: "I need to reschedule my appointment next week...",
+//         receivedDate: new Date(Date.now() - 3600000 * 2).toISOString(), // 2 hours ago
+//         status: "read",
+//         priority: "high",
+//         type: "appointment"
+//       },
+//       {
+//         id: "msg-003",
+//         patient: {
+//           id: "pat-003",
+//           name: "Bob Johnson"
+//         },
+//         subject: "Side effects concern",
+//         preview: "I'm experiencing some side effects from the medication...",
+//         receivedDate: new Date(Date.now() - 3600000 * 5).toISOString(), // 5 hours ago
+//         status: "unread",
+//         priority: "high",
+//         type: "concern"
+//       },
+//       {
+//         id: "msg-004",
+//         patient: {
+//           id: "pat-004",
+//           name: "Alice Brown"
+//         },
+//         subject: "Thank you note",
+//         preview: "Thank you for the excellent care during my visit...",
+//         receivedDate: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+//         status: "read",
+//         priority: "low",
+//         type: "feedback"
+//       }
+//     ];
+
+//     res.json({
+//       success: true,
+//       data: {
+//         messages,
+//         totalCount: messages.length,
+//         unreadCount: messages.filter(msg => msg.status === 'unread').length,
+//         highPriorityCount: messages.filter(msg => msg.priority === 'high').length
+//       }
+//     });
+//   } catch (error) {
+//     console.error("Error fetching doctor inbox:", error);
+//     res.status(500).json({
+//       error: "Internal server error",
+//       details: error instanceof Error ? error.message : "Unknown error"
+//     });
+//   }
+// }
