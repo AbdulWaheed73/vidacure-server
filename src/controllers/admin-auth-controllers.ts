@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import jwt from "jsonwebtoken";
 import { codeExchange, buildAuthorizeURL } from "@criipto/oidc";
 import { ErrorResponse } from "@criipto/oidc/dist/response";
 import {
@@ -11,6 +10,7 @@ import {
   generateRandomState,
   getAppConfig,
   getClientSecret,
+  verifyCriiptoToken,
 } from "../services/auth-service";
 import { CriiptoUserClaims } from "../types/generic-types";
 import { browserDetails } from "../middleware/auth-middleware";
@@ -181,9 +181,23 @@ export const handleAdminCallback = async (
 
     const idToken: string = tokens.id_token;
 
-    // Decode Criipto token
-    const criiptoToken = jwt.decode(idToken) as CriiptoUserClaims;
-    console.log("👤 Admin Criipto token claims:", criiptoToken);
+    // Verify Criipto token signature using JWKS
+    let criiptoToken: CriiptoUserClaims;
+    try {
+      criiptoToken = await verifyCriiptoToken(idToken);
+      console.log("✅ 🔐 CRIIPTO TOKEN SIGNATURE VERIFIED SUCCESSFULLY (Admin)");
+      console.log("👤 Admin Criipto token claims:", criiptoToken);
+    } catch (verificationError) {
+      console.error("❌ Admin Criipto token verification failed:", verificationError);
+      const frontendUrl =
+        process.env.NODE_ENV === "production"
+          ? process.env.PROD_FRONTEND_URL
+          : process.env.DEV_FRONTEND_URL;
+      res.redirect(
+        `${frontendUrl}/admin/login?error=token_verification_failed&message=${encodeURIComponent("Token verification failed.")}`
+      );
+      return;
+    }
 
     // CRITICAL: Find admin ONLY in Admin collection
     const admin = await findAdminBySSN(criiptoToken);

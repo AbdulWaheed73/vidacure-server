@@ -11,6 +11,7 @@ import {
   getAppConfig,
   getRedirectUri,
   getClientSecret,
+  verifyCriiptoToken,
 } from "../services/auth-service";
 import { CriiptoUserClaims } from "../types/generic-types";
 import Patient from "../schemas/patient-schema";
@@ -118,18 +119,16 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
       console.log("\n\n")
       console.log("JWT :" , criiptoJWT);
       console.log("\n\n")
-      criiptoUserClaims = jwt.decode(criiptoJWT) as CriiptoUserClaims;
+      // Verify token signature using Criipto's JWKS
+      criiptoUserClaims = await verifyCriiptoToken(criiptoJWT);
+      console.log("✅ 🔐 CRIIPTO TOKEN SIGNATURE VERIFIED SUCCESSFULLY (Mobile)");
 
-      if (!criiptoUserClaims) {
-        throw new Error("Invalid token payload");
-      }
-
-      console.log("User decoded : ", criiptoUserClaims);
+      console.log("User verified and decoded : ", criiptoUserClaims);
     } catch (verificationError) {
       console.error("❌ Criipto JWT verification failed:", verificationError);
       res.status(401).json({
         error: "Invalid token",
-        message: "Failed to verify Criipto JWT",
+        message: verificationError instanceof Error ? verificationError.message : "Failed to verify Criipto JWT",
       });
       return;
     }
@@ -279,10 +278,20 @@ export const handleCallback = async (
 
     const idToken: string = tokens.id_token;
 
-    // TODO: In production, verify JWT signature with Criipto's public keys
-    // For now, just decode (THIS IS NOT SECURE - IMPLEMENT VERIFICATION)
-    const criiptoToken = jwt.decode(idToken) as CriiptoUserClaims;
-    console.log("👤 Criipto token claims:", criiptoToken);
+    // Verify JWT signature using Criipto's JWKS
+    let criiptoToken: CriiptoUserClaims;
+    try {
+      criiptoToken = await verifyCriiptoToken(idToken);
+      console.log("✅ 🔐 CRIIPTO TOKEN SIGNATURE VERIFIED SUCCESSFULLY (Web Patient)");
+      console.log("👤 Criipto token claims:", criiptoToken);
+    } catch (verificationError) {
+      console.error("❌ Criipto token verification failed:", verificationError);
+      res.status(401).json({
+        error: "Token verification failed",
+        message: verificationError instanceof Error ? verificationError.message : "Failed to verify Criipto token",
+      });
+      return;
+    }
 
     // Find or create user based on SSN
     const { user, isNewUser } = await findOrCreateUser(criiptoToken);

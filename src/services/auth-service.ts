@@ -1,5 +1,6 @@
 import { OpenIDConfigurationManager } from "@criipto/oidc";
 import jwt from "jsonwebtoken";
+import jwksClient from "jwks-rsa";
 import crypto from "crypto";
 import { CriiptoUserClaims, AppUserClaims, BaseUser } from "../types/generic-types";
 import Patient from "../schemas/patient-schema";
@@ -20,6 +21,14 @@ const TTL: number = Number(process.env.TTL); // Default to 30 minutes in millise
 // Initialize configuration manager
 const configManager = new OpenIDConfigurationManager(`https://${domain}`, clientId_web);
 let appConfig: any;
+
+// Initialize JWKS client for Criipto token verification
+const jwksClientInstance = jwksClient({
+  jwksUri: `https://${domain}/.well-known/jwks.json`,
+  cache: true,
+  rateLimit: true,
+  jwksRequestsPerMinute: 10
+});
 
 // Utility functions
 export function hashSSN(ssn: string): string {
@@ -43,6 +52,68 @@ export function generateCSRFToken(): string {
 
 export function generateRandomState(): string {
   return crypto.randomBytes(16).toString('hex');
+}
+
+/**
+ * Verifies a Criipto JWT token by validating its signature using Criipto's JWKS
+ * @param token - The JWT token from Criipto to verify
+ * @returns The decoded and verified token claims
+ * @throws Error if token is invalid, expired, or verification fails
+ */
+export async function verifyCriiptoToken(token: string): Promise<CriiptoUserClaims> {
+  return new Promise((resolve, reject) => {
+    // First decode the token to get the header (without verification)
+    const decoded = jwt.decode(token, { complete: true });
+
+    if (!decoded || typeof decoded === 'string') {
+      return reject(new Error('Invalid token format'));
+    }
+
+    const kid = decoded.header.kid;
+
+    if (!kid) {
+      return reject(new Error('Token missing key ID (kid) in header'));
+    }
+
+    // Get the signing key from JWKS
+    jwksClientInstance.getSigningKey(kid, (err, key) => {
+      if (err) {
+        console.error('❌ Failed to get signing key from JWKS:', err);
+        return reject(new Error('Failed to verify token signature'));
+      }
+
+      const signingKey = key?.getPublicKey();
+
+      if (!signingKey) {
+        return reject(new Error('Failed to retrieve public key'));
+      }
+
+      // Verify the token with the public key
+      jwt.verify(
+        token,
+        signingKey,
+        {
+          algorithms: ['RS256'], // Criipto uses RS256
+          issuer: `https://${domain}`, // Validate issuer matches Criipto domain
+          // Note: We don't validate audience here because tokens can come from both web and app clients
+          // The signature verification and issuer check provide sufficient security
+        },
+        (verifyErr: jwt.VerifyErrors | null, verifiedToken: string | jwt.JwtPayload | undefined) => {
+          if (verifyErr) {
+            console.error('❌ Token verification failed:', verifyErr.message);
+            return reject(new Error(`Token verification failed: ${verifyErr.message}`));
+          }
+
+          if (!verifiedToken || typeof verifiedToken === 'string') {
+            return reject(new Error('Invalid token payload'));
+          }
+
+          console.log('✅ Criipto token verified successfully');
+          resolve(verifiedToken as CriiptoUserClaims);
+        }
+      );
+    });
+  });
 }
 
 export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise<{ user: PatientT | DoctorT, isNewUser: boolean }> {
