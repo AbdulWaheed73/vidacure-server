@@ -5,8 +5,22 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   typescript: true,
 });
 
+// Get price IDs from environment variables
+const getPriceId = (planType: 'lifestyle' | 'medical'): string => {
+  const priceId = planType === 'lifestyle'
+    ? process.env.STRIPE_PRICE_LIFESTYLE
+    : process.env.STRIPE_PRICE_MEDICAL;
+
+  if (!priceId) {
+    throw new Error(`STRIPE_PRICE_${planType.toUpperCase()} environment variable is not set`);
+  }
+
+  return priceId;
+};
+
 export const stripeService = {
   stripe,
+  getPriceId,
 
   createCustomer: async (email: string, name: string, metadata?: Record<string, string>) => {
     return await stripe.customers.create({
@@ -61,42 +75,15 @@ export const stripeService = {
   }) => {
     const { customerId, customerEmail, planType, successUrl, cancelUrl, metadata } = params;
 
-    let priceData: Stripe.Checkout.SessionCreateParams.LineItem.PriceData;
-    
-    if (planType === 'lifestyle') {
-      priceData = {
-        currency: 'sek',
-        product_data: {
-          name: 'Lifestyle Program Membership',
-          description: 'Your access to expert coaching and support for a healthier lifestyle.',
-        },
-        unit_amount: 79500, // 795 SEK in öre
-        recurring: {
-          interval: 'month',
-        },
-      };
-    } else if (planType === 'medical') {
-      priceData = {
-        currency: 'sek',
-        product_data: {
-          name: 'Medical Program Membership',
-          description: 'Your all-in-one access to our medical team, coaching, and support.',
-        },
-        unit_amount: 149500, // 1495 SEK in öre
-        recurring: {
-          interval: 'month',
-        },
-      };
-    } else {
-      throw new Error('Invalid plan type');
-    }
+    // Use pre-created price IDs from environment variables
+    const priceId = getPriceId(planType);
 
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       payment_method_types: ['card'],
       mode: 'subscription',
       line_items: [
         {
-          price_data: priceData,
+          price: priceId,
           quantity: 1,
         },
       ],
@@ -106,8 +93,8 @@ export const stripeService = {
         planType,
         ...metadata,
       },
-      allow_promotion_codes: true,
-      billing_address_collection: 'required',
+      // allow_promotion_codes: true,
+      // billing_address_collection: 'required',
     };
 
     if (customerId) {
@@ -166,46 +153,16 @@ export const stripeService = {
     planType: 'lifestyle' | 'medical';
     paymentMethodId?: string;
     metadata?: Record<string, string>;
+    idempotencyKey?: string;
   }) => {
-    const { customerId, planType, paymentMethodId, metadata } = params;
+    const { customerId, planType, paymentMethodId, metadata, idempotencyKey } = params;
 
-    let priceData: {
-      currency: string;
-      unit_amount: number;
-      recurring: { interval: 'month' };
-      product_data: { name: string; description: string };
-    };
-    
-    if (planType === 'lifestyle') {
-      priceData = {
-        currency: 'sek',
-        unit_amount: 79500, // 795 SEK in öre
-        recurring: { interval: 'month' },
-        product_data: {
-          name: 'Lifestyle Program Membership',
-          description: 'Your access to expert coaching and support for a healthier lifestyle.',
-        },
-      };
-    } else if (planType === 'medical') {
-      priceData = {
-        currency: 'sek',
-        unit_amount: 149500, // 1495 SEK in öre
-        recurring: { interval: 'month' },
-        product_data: {
-          name: 'Medical Program Membership',
-          description: 'Your all-in-one access to our medical team, coaching, and support.',
-        },
-      };
-    } else {
-      throw new Error('Invalid plan type');
-    }
-
-    // Create a price for the subscription
-    const price = await stripe.prices.create(priceData);
+    // Use pre-created price IDs from environment variables
+    const priceId = getPriceId(planType);
 
     const subscriptionParams: Stripe.SubscriptionCreateParams = {
       customer: customerId,
-      items: [{ price: price.id }],
+      items: [{ price: priceId }],
       metadata: {
         planType,
         ...metadata,
@@ -217,7 +174,12 @@ export const stripeService = {
       subscriptionParams.default_payment_method = paymentMethodId;
     }
 
-    return await stripe.subscriptions.create(subscriptionParams);
+    const options: Stripe.RequestOptions = {};
+    if (idempotencyKey) {
+      options.idempotencyKey = idempotencyKey;
+    }
+
+    return await stripe.subscriptions.create(subscriptionParams, options);
   },
 
   retrievePaymentMethod: async (paymentMethodId: string) => {

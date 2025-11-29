@@ -40,9 +40,6 @@ const PatientSchema: Schema = new Schema(
 
     doctor: { type: Types.ObjectId, ref: "Doctor" },
 
-    // Keep stripeSubscriptionId at root level for webhook queries
-    stripeSubscriptionId: { type: String },
-
     subscription: {
       stripeCustomerId: { type: String },
       stripeSubscriptionId: { type: String },

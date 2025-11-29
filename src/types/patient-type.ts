@@ -27,9 +27,6 @@ export type PatientT = {
 
   doctor?: Types.ObjectId; // ref: Doctor
 
-  // Keep stripeSubscriptionId at root level for webhook queries
-  stripeSubscriptionId?: string;
-
   subscription?: {
     stripeCustomerId: string;
     stripeSubscriptionId: string;

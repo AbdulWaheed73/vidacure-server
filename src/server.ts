@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import databaseConnection from "./utils/database-connection";
+import { validateEnvironment } from "./utils/env-validation";
 import { initializeAuth } from "./services/auth-service";
 import authRoutes from "./routes/auth-routes";
 import patientRoutes from "./routes/patient-routes";
@@ -16,6 +17,13 @@ import { requireAuth, requireCSRF, requireRole } from "./middleware/auth-middlew
 import { auditMiddleware } from "./middleware/audit-middleware";
 import os from 'os';
 
+// Validate environment variables before starting the server
+try {
+  validateEnvironment();
+} catch {
+  console.error('Server startup aborted due to environment validation failure');
+  process.exit(1);
+}
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "3000", 10);
