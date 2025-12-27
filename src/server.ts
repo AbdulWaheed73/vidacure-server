@@ -13,6 +13,8 @@ import calendlyRoutes from "./routes/calendly-routes";
 import adminRoutes from "./routes/admin-routes";
 import adminAuthRoutes from "./routes/admin-auth-routes";
 import prescriptionRoutes from "./routes/prescription-routes";
+import userDeletionRoutes from "./routes/user-deletion-routes";
+import adminNotificationRoutes from "./routes/admin-notification-routes";
 import { requireAuth, requireCSRF, requireRole } from "./middleware/auth-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
 import os from 'os';
@@ -136,6 +138,12 @@ app.use("/api/admin/auth", adminAuthRoutes);
 
 // Admin panel routes - protected by admin auth middleware
 app.use("/api/admin", adminRoutes);
+
+// User deletion routes - self-deletion and admin deletion
+app.use("/api/users", userDeletionRoutes);
+
+// Admin notification routes
+app.use("/api/admin/notifications", adminNotificationRoutes);
 
 app.post('/1401621/chat', express.raw({type: 'application/json'}), (req, res) => {
   console.log("\n\n\nheyy im hit !!!\n\n\n\n");

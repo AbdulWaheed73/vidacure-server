@@ -232,6 +232,42 @@ export const stripeService = {
     });
     return paymentMethods.data;
   },
+
+  /**
+   * Delete a Stripe customer (GDPR compliance)
+   * Cancels active subscriptions before deleting the customer
+   */
+  deleteCustomer: async (customerId: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      // First, retrieve the customer to check for active subscriptions
+      const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
+
+      if (customer.deleted) {
+        return { success: true }; // Already deleted
+      }
+
+      // Cancel all active subscriptions
+      const subscriptions = await stripe.subscriptions.list({
+        customer: customerId,
+        status: 'active',
+      });
+
+      for (const subscription of subscriptions.data) {
+        await stripe.subscriptions.cancel(subscription.id);
+      }
+
+      // Delete the customer
+      await stripe.customers.del(customerId);
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error deleting Stripe customer:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to delete Stripe customer'
+      };
+    }
+  },
 };
 
 export default stripeService;

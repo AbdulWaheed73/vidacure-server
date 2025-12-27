@@ -130,8 +130,8 @@ export async function requireCSRF(
   else if (clientToken !== csrf)
   {
     res.status(401).json({error: "Wrong CSRF token"});
+    return;
   }
-
 
   next();
 }
