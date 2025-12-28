@@ -185,56 +185,76 @@ export const userDeletionService = {
   },
 
   /**
-   * Create admin notification for Calendly manual deletion (doctors only)
+   * Create admin notification for user deletion
    */
   async createCalendlyNotification(
     userId: string,
     userType: UserTypeForDeletion,
     deletionLogId: string
   ): Promise<CalendlyDeletionResult> {
-    // Only doctors have Calendly accounts
-    if (userType !== 'patient') {
-      return {
-        success: true,
-        notificationCreated: false
-      };
-    }
-
     try {
-      const doctor = await DoctorSchema.findById(userId);
+      if (userType === 'doctor') {
+        const doctor = await DoctorSchema.findById(userId);
 
-      if (!doctor?.calendlyUserUri) {
+        if (!doctor) {
+          return { success: true, notificationCreated: false };
+        }
+
+        // Create notification for doctor deletion
+        await AdminNotificationSchema.create({
+          type: 'user_deletion',
+          priority: 'high',
+          read: false,
+          message: `Doctor account deleted: ${doctor.name} (${doctor.email})`,
+          actionRequired: doctor.calendlyUserUri
+            ? `Manually delete invitee data for ${doctor.email} in Calendly dashboard. User URI: ${doctor.calendlyUserUri}`
+            : `Doctor deletion completed. No Calendly cleanup required.`,
+          metadata: {
+            userEmail: doctor.email,
+            userName: doctor.name,
+            userType: 'doctor',
+            calendlyUserUri: doctor.calendlyUserUri,
+            deletionLogId
+          }
+        });
+
         return {
           success: true,
-          notificationCreated: false
-        }; // No Calendly account
-      }
+          notificationCreated: true,
+          email: doctor.email
+        };
+      } else {
+        // Patient deletion notification
+        const patient = await PatientSchema.findById(userId);
 
-      const notification = await AdminNotificationSchema.create({
-        type: 'calendly_deletion',
-        priority: 'high',
-        read: false,
-        message: `User deletion requires Calendly cleanup for ${doctor.name} (${doctor.email})`,
-        actionRequired: `Manually delete invitee data for ${doctor.email} in Calendly dashboard. User URI: ${doctor.calendlyUserUri}`,
-        metadata: {
-          userEmail: doctor.email,
-          userName: doctor.name,
-          calendlyUserUri: doctor.calendlyUserUri,
-          deletionLogId
+        if (!patient) {
+          return { success: true, notificationCreated: false };
         }
-      });
 
-      return {
-        success: true,
-        notificationCreated: true,
-        email: doctor.email
-      };
+        await AdminNotificationSchema.create({
+          type: 'user_deletion',
+          priority: 'medium',
+          read: false,
+          message: `Patient account deleted: ${patient.name}`,
+          actionRequired: 'Patient data has been removed from all systems.',
+          metadata: {
+            userName: patient.name,
+            userType: 'patient',
+            deletionLogId
+          }
+        });
+
+        return {
+          success: true,
+          notificationCreated: true
+        };
+      }
     } catch (error: any) {
-      console.error('Error creating Calendly notification:', error);
+      console.error('Error creating deletion notification:', error);
       return {
         success: false,
         notificationCreated: false,
-        error: error.message || 'Failed to create Calendly notification'
+        error: error.message || 'Failed to create deletion notification'
       };
     }
   },

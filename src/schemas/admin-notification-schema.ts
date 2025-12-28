@@ -5,7 +5,7 @@ const AdminNotificationSchema: Schema = new Schema(
   {
     type: {
       type: String,
-      enum: ['calendly_deletion', 'general'],
+      enum: ['calendly_deletion', 'user_deletion', 'general'],
       required: true,
       index: true
     },

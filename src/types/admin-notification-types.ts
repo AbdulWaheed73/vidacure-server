@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 
 // Notification types
-export type NotificationType = 'calendly_deletion' | 'general';
+export type NotificationType = 'calendly_deletion' | 'user_deletion' | 'general';
 
 // Notification priority
 export type NotificationPriority = 'high' | 'medium' | 'low';
