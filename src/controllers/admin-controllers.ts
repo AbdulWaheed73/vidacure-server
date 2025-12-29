@@ -46,7 +46,7 @@ export const getAllPatients = async (req: express.Request, res: express.Response
     const [patients, totalCount] = await Promise.all([
       PatientSchema.find({})
         .populate('doctor', 'name email _id')
-        .select('name email doctor subscription lastLogin createdAt')
+        .select('name email doctor subscription lastLogin createdAt meetingStatus scheduledMeetingTime meetingCompletedAt')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),

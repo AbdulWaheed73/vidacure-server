@@ -81,3 +81,21 @@ export const webhookRateLimiter = createRateLimiter({
   message: 'Webhook rate limit exceeded',
   keyGenerator: (req) => `webhook:${req.ip}`
 });
+
+// Public session creation rate limiter: 5 requests per 15 minutes per IP
+// Prevents spam session creation
+export const pendingSessionRateLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  message: 'Too many session requests. Please try again later.',
+  keyGenerator: (req) => `pending-session:${req.ip}`
+});
+
+// Public session lookup rate limiter: 20 requests per minute per IP
+// Prevents token enumeration attacks
+export const sessionLookupRateLimiter = createRateLimiter({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 20,
+  message: 'Too many requests. Please slow down.',
+  keyGenerator: (req) => `session-lookup:${req.ip}`
+});

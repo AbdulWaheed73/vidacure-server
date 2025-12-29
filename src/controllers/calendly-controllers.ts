@@ -1,9 +1,11 @@
 import { Response } from "express";
 import { AuthenticatedRequest } from "../types/generic-types";
+import { AdminAuthenticatedRequest } from "../middleware/admin-auth-middleware";
 import { createSingleUseLink, getCalendlyUserByEmail, getScheduledEvents, getScheduledEventsByInviteeEmail, getEventInvitees } from "../services/calendly-service";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
 import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
+import AdminSchema from "../schemas/admin-schema";
 
 // Patient booking endpoint - handles everything server-side
 export const createPatientBookingLink = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -695,6 +697,335 @@ export const getPatientAvailableEventTypes = async (req: AuthenticatedRequest, r
     res.status(500).json({
       error: "Failed to fetch available appointment types",
       message: "Please try again or contact support"
+    });
+  }
+};
+
+// Import for webhook handler
+import crypto from "crypto";
+import { Request } from "express";
+import { PendingSession, PendingBooking } from "../schemas/pending-booking-schema";
+
+// Calendly webhook types
+type CalendlyWebhookEvent = {
+  event: "invitee.created" | "invitee.canceled";
+  created_at: string;
+  payload: {
+    uri: string;
+    email: string;
+    name: string;
+    status: string;
+    event: string;
+    scheduled_event: {
+      uri: string;
+      start_time: string;
+      end_time: string;
+    };
+    tracking?: {
+      utm_campaign?: string;
+      utm_source?: string;
+      utm_medium?: string;
+      utm_content?: string;
+      utm_term?: string;
+    };
+    cancel_url?: string;
+    reschedule_url?: string;
+  };
+};
+
+// Verify Calendly webhook signature
+const verifyCalendlySignature = (
+  payload: string,
+  signature: string,
+  webhookSecret: string
+): boolean => {
+  const [timestampPart, signaturePart] = signature.split(",").map((part) => {
+    const [, value] = part.split("=");
+    return value;
+  });
+
+  if (!timestampPart || !signaturePart) {
+    console.error("Invalid signature format");
+    return false;
+  }
+
+  // Tolerance of 5 minutes for timestamp
+  const tolerance = 300; // 5 minutes in seconds
+  const currentTime = Math.floor(Date.now() / 1000);
+  const signatureTime = parseInt(timestampPart, 10);
+
+  if (Math.abs(currentTime - signatureTime) > tolerance) {
+    console.error("Webhook signature timestamp is too old");
+    return false;
+  }
+
+  // Calculate expected signature
+  const signedPayload = `${timestampPart}.${payload}`;
+  const expectedSignature = crypto
+    .createHmac("sha256", webhookSecret)
+    .update(signedPayload)
+    .digest("hex");
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signaturePart),
+    Buffer.from(expectedSignature)
+  );
+};
+
+// Handle Calendly webhook events
+export const handleCalendlyWebhook = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const signature = req.headers["calendly-webhook-signature"] as string;
+    const webhookSecret = process.env.CALENDLY_WEBHOOK_SECRET;
+
+    // Verify webhook secret is configured
+    if (!webhookSecret) {
+      console.error("CALENDLY_WEBHOOK_SECRET is not configured");
+      res.status(500).json({ error: "Webhook not configured" });
+      return;
+    }
+
+    // Get raw body for signature verification
+    const rawBody = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+
+    // Verify signature (optional in development, required in production)
+    if (signature) {
+      const isValid = verifyCalendlySignature(rawBody, signature, webhookSecret);
+      if (!isValid) {
+        console.error("Invalid Calendly webhook signature");
+        res.status(401).json({ error: "Invalid signature" });
+        return;
+      }
+    } else if (process.env.NODE_ENV === "production") {
+      console.error("Missing Calendly webhook signature in production");
+      res.status(401).json({ error: "Missing signature" });
+      return;
+    }
+
+    // Parse the event
+    const event: CalendlyWebhookEvent = typeof req.body === "string"
+      ? JSON.parse(req.body)
+      : req.body;
+
+    console.log(`📅 Calendly webhook received: ${event.event}`);
+    console.log(`📋 Webhook payload tracking:`, JSON.stringify(event.payload.tracking, null, 2));
+
+    switch (event.event) {
+      case "invitee.created": {
+        // Extract token from UTM tracking
+        const token = event.payload.tracking?.utm_term;
+        console.log(`🔑 UTM Term token: ${token || 'NOT FOUND'}`);
+
+        if (!token) {
+          console.log("No token in webhook - booking may not be from pre-login flow");
+          res.status(200).json({ received: true, message: "No token found" });
+          return;
+        }
+
+        // Verify pending session exists
+        const pendingSession = await PendingSession.findOne({ token });
+        if (!pendingSession) {
+          console.log(`Session not found for token: ${token}`);
+          res.status(200).json({ received: true, message: "Session not found" });
+          return;
+        }
+
+        // Set expiry for pending booking (30 days)
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+
+        // Create pending booking
+        const pendingBooking = new PendingBooking({
+          token,
+          calendlyEventUri: event.payload.scheduled_event.uri,
+          calendlyInviteeUri: event.payload.uri,
+          inviteeEmail: event.payload.email,
+          inviteeName: event.payload.name,
+          scheduledTime: new Date(event.payload.scheduled_event.start_time),
+          status: "active",
+          expiresAt,
+        });
+
+        await pendingBooking.save();
+
+        console.log(`✅ Created pending booking for token: ${token}`);
+        res.status(200).json({ received: true, bookingCreated: true });
+        break;
+      }
+
+      case "invitee.canceled": {
+        // Find and update pending booking by Calendly invitee URI
+        const booking = await PendingBooking.findOneAndUpdate(
+          { calendlyInviteeUri: event.payload.uri },
+          { status: "canceled" }
+        );
+
+        if (booking) {
+          console.log(`❌ Marked booking as canceled: ${event.payload.uri}`);
+
+          // Also update patient if already linked - clear all meeting-related fields
+          if (booking.linkedUserId) {
+            await PatientSchema.findByIdAndUpdate(booking.linkedUserId, {
+              meetingStatus: "none",
+              scheduledMeetingTime: null,
+              calendlyEventUri: null,
+              calendlyInviteeUri: null,
+            });
+            console.log(`🧹 Cleared meeting data for patient: ${booking.linkedUserId}`);
+          }
+        }
+
+        res.status(200).json({ received: true, bookingCanceled: !!booking });
+        break;
+      }
+
+      default:
+        console.log(`Unhandled Calendly webhook event: ${event.event}`);
+        res.status(200).json({ received: true });
+    }
+  } catch (error) {
+    console.error("Error processing Calendly webhook:", error);
+    res.status(500).json({ error: "Webhook processing failed" });
+  }
+};
+
+// Mark meeting as complete (admin action)
+export const markMeetingComplete = async (
+  req: AdminAuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const adminId = req.admin?.userId;
+    const { patientId } = req.params;
+
+    if (!adminId) {
+      res.status(401).json({ error: "Admin authentication required" });
+      return;
+    }
+
+    if (!patientId) {
+      res.status(400).json({ error: "Patient ID is required" });
+      return;
+    }
+
+    // Verify admin exists
+    const admin = await AdminSchema.findById(adminId);
+    if (!admin) {
+      res.status(404).json({ error: "Admin not found" });
+      return;
+    }
+
+    // Find patient
+    const patient = await PatientSchema.findById(patientId);
+    if (!patient) {
+      res.status(404).json({ error: "Patient not found" });
+      return;
+    }
+
+    const previousStatus = patient.meetingStatus;
+
+    // Update patient meeting status
+    patient.meetingStatus = "completed";
+    patient.meetingCompletedAt = new Date();
+    await patient.save();
+
+    await auditDatabaseOperation(req, "mark_meeting_complete", "UPDATE", patientId, {
+      adminId,
+      patientId,
+      previousStatus,
+    });
+
+    console.log(`✅ Admin ${adminId} marked meeting complete for patient ${patientId}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Meeting marked as complete",
+      meetingStatus: "completed",
+      meetingCompletedAt: patient.meetingCompletedAt,
+    });
+  } catch (error) {
+    console.error("Error marking meeting complete:", error);
+    await auditDatabaseError(req, "mark_meeting_complete", "UPDATE", error);
+
+    res.status(500).json({
+      error: "Failed to mark meeting as complete",
+      message: "Please try again or contact support",
+    });
+  }
+};
+
+// Mark meeting as complete by patient email (admin action)
+export const markMeetingCompleteByEmail = async (
+  req: AdminAuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const adminId = req.admin?.userId;
+    const { email } = req.body;
+
+    if (!adminId) {
+      res.status(401).json({ error: "Admin authentication required" });
+      return;
+    }
+
+    if (!email) {
+      res.status(400).json({ error: "Patient email is required" });
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      res.status(400).json({ error: "Invalid email format" });
+      return;
+    }
+
+    // Verify admin exists
+    const admin = await AdminSchema.findById(adminId);
+    if (!admin) {
+      res.status(404).json({ error: "Admin not found" });
+      return;
+    }
+
+    // Find patient by email
+    const patient = await PatientSchema.findOne({ email: email.toLowerCase() });
+    if (!patient) {
+      res.status(404).json({ error: "Patient not found with this email" });
+      return;
+    }
+
+    const previousStatus = patient.meetingStatus;
+
+    // Update patient meeting status
+    patient.meetingStatus = "completed";
+    patient.meetingCompletedAt = new Date();
+    await patient.save();
+
+    await auditDatabaseOperation(req, "mark_meeting_complete_by_email", "UPDATE", patient._id?.toString(), {
+      adminId,
+      patientEmail: email,
+      previousStatus,
+    });
+
+    console.log(`✅ Admin ${adminId} marked meeting complete for patient email: ${email}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Meeting marked as complete",
+      meetingStatus: "completed",
+      meetingCompletedAt: patient.meetingCompletedAt,
+      patientName: patient.name,
+    });
+  } catch (error) {
+    console.error("Error marking meeting complete by email:", error);
+    await auditDatabaseError(req, "mark_meeting_complete_by_email", "UPDATE", error);
+
+    res.status(500).json({
+      error: "Failed to mark meeting as complete",
+      message: "Please try again or contact support",
     });
   }
 };

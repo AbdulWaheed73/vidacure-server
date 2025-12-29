@@ -15,6 +15,7 @@ import adminAuthRoutes from "./routes/admin-auth-routes";
 import prescriptionRoutes from "./routes/prescription-routes";
 import userDeletionRoutes from "./routes/user-deletion-routes";
 import adminNotificationRoutes from "./routes/admin-notification-routes";
+import pendingBookingRoutes from "./routes/pending-booking-routes";
 import { requireAuth, requireCSRF, requireRole } from "./middleware/auth-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
 import os from 'os';
@@ -125,13 +126,15 @@ initializeAuth()
 // Parent Routes
 app.use("/api", authRoutes);
 app.use("/api/payment", paymentRoutes);
+// Pending booking routes - mixed public and protected endpoints
+app.use("/api/pending-booking", pendingBookingRoutes);
 app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), patientRoutes);
 app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), doctorRoutes);
 app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), prescriptionRoutes);
 // Chat routes without CSRF for now - will add CSRF to individual routes that need it
 app.use("/api/chat", requireAuth, auditMiddleware, chatRoutes);
-// Calendly routes - accessible by both patients and doctors
-app.use("/api/calendly", requireAuth, auditMiddleware, requireCSRF, calendlyRoutes);
+// Calendly routes - the webhook handler inside uses express.json() and bypasses auth via route-level check
+app.use("/api/calendly", calendlyRoutes);
 
 // Admin authentication routes - separate from regular auth
 app.use("/api/admin/auth", adminAuthRoutes);

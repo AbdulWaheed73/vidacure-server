@@ -149,6 +149,7 @@ export function requireRole(allowedRoles: string | string[]) {
     const userRole = req?.user?.role;
 
     if (!userRole || !roles.includes(userRole)) {
+      console.log("userRole: ", userRole, "  roles: ", roles);
       res.status(403).json({ error: "Insufficient permissions" });
       return;
     }
