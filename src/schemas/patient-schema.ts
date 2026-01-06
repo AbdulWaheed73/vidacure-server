@@ -70,16 +70,18 @@ const PatientSchema: Schema = new Schema(
 
     hasCompletedOnboarding: { type: Boolean, default: false },
 
-    // Meeting status for onboarding flow
-    meetingStatus: {
-      type: String,
-      enum: ["none", "scheduled", "completed"],
-      default: "none"
+    // Calendly meeting data - grouped for easier management
+    calendly: {
+      meetingStatus: {
+        type: String,
+        enum: ["none", "scheduled", "completed"],
+        default: "none"
+      },
+      scheduledMeetingTime: { type: Date },
+      completedAt: { type: Date },
+      eventUri: { type: String },
+      inviteeUri: { type: String }
     },
-    scheduledMeetingTime: { type: Date },
-    meetingCompletedAt: { type: Date },
-    calendlyEventUri: { type: String },
-    calendlyInviteeUri: { type: String },
 
     prescription: {
       medicationDetails: { type: String },

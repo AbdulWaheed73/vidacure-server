@@ -174,11 +174,14 @@ export const linkBookingToUser = async (req: AuthenticatedRequest, res: Response
       return;
     }
 
-    // Update patient with meeting info
-    patient.meetingStatus = "scheduled";
-    patient.scheduledMeetingTime = pendingBooking.scheduledTime;
-    patient.calendlyEventUri = pendingBooking.calendlyEventUri;
-    patient.calendlyInviteeUri = pendingBooking.calendlyInviteeUri;
+    // Update patient with meeting info using nested calendly object
+    if (!patient.calendly) {
+      patient.calendly = {};
+    }
+    patient.calendly.meetingStatus = "scheduled";
+    patient.calendly.scheduledMeetingTime = pendingBooking.scheduledTime;
+    patient.calendly.eventUri = pendingBooking.calendlyEventUri;
+    patient.calendly.inviteeUri = pendingBooking.calendlyInviteeUri;
 
     // Also update BMI data if available from session
     const pendingSession = await PendingSession.findOne({ token });
@@ -236,9 +239,7 @@ export const getMeetingStatus = async (req: AuthenticatedRequest, res: Response)
       return;
     }
 
-    const patient = await PatientSchema.findById(userId).select(
-      "meetingStatus scheduledMeetingTime meetingCompletedAt"
-    );
+    const patient = await PatientSchema.findById(userId).select("calendly");
 
     if (!patient) {
       res.status(404).json({
@@ -249,19 +250,22 @@ export const getMeetingStatus = async (req: AuthenticatedRequest, res: Response)
     }
 
     // Check if meeting gate is passed
+    const meetingStatus = patient.calendly?.meetingStatus || "none";
+    const scheduledMeetingTime = patient.calendly?.scheduledMeetingTime;
+
     let isMeetingGatePassed = false;
-    if (patient.meetingStatus === "completed") {
+    if (meetingStatus === "completed") {
       isMeetingGatePassed = true;
-    } else if (patient.meetingStatus === "scheduled" && patient.scheduledMeetingTime) {
+    } else if (meetingStatus === "scheduled" && scheduledMeetingTime) {
       // Auto-unlock if meeting time has passed
-      isMeetingGatePassed = new Date() > patient.scheduledMeetingTime;
+      isMeetingGatePassed = new Date() > scheduledMeetingTime;
     }
 
     res.status(200).json({
       success: true,
-      meetingStatus: patient.meetingStatus || "none",
-      scheduledMeetingTime: patient.scheduledMeetingTime,
-      meetingCompletedAt: patient.meetingCompletedAt,
+      meetingStatus,
+      scheduledMeetingTime,
+      completedAt: patient.calendly?.completedAt,
       isMeetingGatePassed,
     });
   } catch (error) {

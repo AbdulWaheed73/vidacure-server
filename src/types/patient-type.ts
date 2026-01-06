@@ -49,12 +49,14 @@ export type PatientT = {
 
   hasCompletedOnboarding?: boolean;
 
-  // Meeting status for onboarding flow
-  meetingStatus?: "none" | "scheduled" | "completed";
-  scheduledMeetingTime?: Date;
-  meetingCompletedAt?: Date;
-  calendlyEventUri?: string;
-  calendlyInviteeUri?: string;
+  // Calendly meeting data - grouped for easier management
+  calendly?: {
+    meetingStatus?: "none" | "scheduled" | "completed";
+    scheduledMeetingTime?: Date;
+    completedAt?: Date;
+    eventUri?: string;
+    inviteeUri?: string;
+  };
 
   prescription?: {
     doctor: Types.ObjectId; // ref: Doctor

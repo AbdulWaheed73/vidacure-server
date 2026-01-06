@@ -218,8 +218,8 @@ export const createCheckoutSession = async (
     }
 
     // Check meeting gate - must have completed consultation before subscribing
-    const meetingStatus = patient.meetingStatus || "none";
-    const scheduledMeetingTime = patient.scheduledMeetingTime;
+    const meetingStatus = patient.calendly?.meetingStatus || "none";
+    const scheduledMeetingTime = patient.calendly?.scheduledMeetingTime;
 
     // Meeting gate is passed if:
     // 1. Meeting is marked as completed, OR

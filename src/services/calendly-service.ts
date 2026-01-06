@@ -196,3 +196,134 @@ export async function getEventInvitees(eventUri: string) {
     return [];
   }
 }
+
+// ============================================================================
+// URI-based meeting retrieval (without email)
+// These functions allow tracking patient meetings using stored Calendly URIs
+// ============================================================================
+
+import type { ScheduledEventDetails, InviteeDetails } from '../types/calendly-types';
+
+/**
+ * Get scheduled event details by event URI
+ * Does NOT require patient email - uses stored URI
+ */
+export async function getScheduledEventByUri(eventUri: string): Promise<ScheduledEventDetails | null> {
+  try {
+    // Extract the UUID from the event URI
+    // eventUri format: https://api.calendly.com/scheduled_events/{uuid}
+    const eventUuid = eventUri.split('/').pop();
+    if (!eventUuid) {
+      throw new Error('Invalid event URI format');
+    }
+
+    const response = await makeCalendlyRequest(`/scheduled_events/${eventUuid}`);
+    return response.resource || null;
+  } catch (error: any) {
+    console.error(`Error fetching event by URI ${eventUri}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get invitee details by invitee URI
+ * Does NOT require patient email - uses stored URI
+ */
+export async function getInviteeByUri(inviteeUri: string): Promise<InviteeDetails | null> {
+  try {
+    // inviteeUri format: https://api.calendly.com/scheduled_events/{event_uuid}/invitees/{invitee_uuid}
+    // We need to extract both UUIDs
+    const uriParts = inviteeUri.split('/');
+    const inviteeUuid = uriParts.pop();
+    uriParts.pop(); // Remove 'invitees'
+    const eventUuid = uriParts.pop();
+
+    if (!eventUuid || !inviteeUuid) {
+      throw new Error('Invalid invitee URI format');
+    }
+
+    const response = await makeCalendlyRequest(`/scheduled_events/${eventUuid}/invitees/${inviteeUuid}`);
+    return response.resource || null;
+  } catch (error: any) {
+    console.error(`Error fetching invitee by URI ${inviteeUri}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get complete meeting details by event URI (event + all invitees)
+ * Primary method for tracking patient meetings without email
+ */
+export async function getMeetingDetailsByEventUri(eventUri: string): Promise<{
+  event: ScheduledEventDetails | null;
+  invitees: InviteeDetails[];
+} | null> {
+  try {
+    const event = await getScheduledEventByUri(eventUri);
+    if (!event) {
+      return null;
+    }
+
+    const invitees = await getEventInvitees(eventUri);
+
+    return {
+      event,
+      invitees
+    };
+  } catch (error: any) {
+    console.error(`Error fetching meeting details for ${eventUri}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get patient's meeting using stored Calendly URIs (no email required)
+ * Falls back to email-based lookup if URIs are not available
+ */
+export async function getPatientMeetingByStoredUri(
+  eventUri: string | null | undefined,
+  inviteeUri: string | null | undefined,
+  fallbackEmail?: string
+): Promise<{
+  event: ScheduledEventDetails | null;
+  invitee: InviteeDetails | null;
+  method: 'uri' | 'email' | 'none';
+}> {
+  // Try URI-based lookup first (preferred - no email needed)
+  if (eventUri) {
+    const event = await getScheduledEventByUri(eventUri);
+    let invitee: InviteeDetails | null = null;
+
+    if (inviteeUri) {
+      invitee = await getInviteeByUri(inviteeUri);
+    } else if (event) {
+      // Get first invitee from event if invitee URI not stored
+      const invitees = await getEventInvitees(eventUri);
+      invitee = invitees[0] || null;
+    }
+
+    if (event) {
+      return { event, invitee, method: 'uri' };
+    }
+  }
+
+  // Fall back to email-based lookup
+  if (fallbackEmail) {
+    try {
+      const events = await getScheduledEventsByInviteeEmail(fallbackEmail);
+      if (events.length > 0) {
+        const latestEvent = events[0]; // Already sorted by Calendly
+        const invitees = await getEventInvitees(latestEvent.uri);
+        return {
+          event: latestEvent,
+          invitee: invitees[0] || null,
+          method: 'email'
+        };
+      }
+    } catch (error) {
+      console.error('Email fallback failed:', error);
+    }
+  }
+
+  return { event: null, invitee: null, method: 'none' };
+}

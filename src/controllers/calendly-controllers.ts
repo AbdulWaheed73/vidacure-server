@@ -875,10 +875,10 @@ export const handleCalendlyWebhook = async (
           // Also update patient if already linked - clear all meeting-related fields
           if (booking.linkedUserId) {
             await PatientSchema.findByIdAndUpdate(booking.linkedUserId, {
-              meetingStatus: "none",
-              scheduledMeetingTime: null,
-              calendlyEventUri: null,
-              calendlyInviteeUri: null,
+              "calendly.meetingStatus": "none",
+              "calendly.scheduledMeetingTime": null,
+              "calendly.eventUri": null,
+              "calendly.inviteeUri": null,
             });
             console.log(`🧹 Cleared meeting data for patient: ${booking.linkedUserId}`);
           }
@@ -931,11 +931,18 @@ export const markMeetingComplete = async (
       return;
     }
 
-    const previousStatus = patient.meetingStatus;
+    const previousStatus = patient.calendly?.meetingStatus || "none";
 
-    // Update patient meeting status
-    patient.meetingStatus = "completed";
-    patient.meetingCompletedAt = new Date();
+    // Accept completedAt from frontend (admin's local timezone)
+    const { completedAt } = req.body;
+    const completedAtDate = completedAt ? new Date(completedAt) : new Date();
+
+    // Update patient meeting status using nested calendly object
+    if (!patient.calendly) {
+      patient.calendly = {};
+    }
+    patient.calendly.meetingStatus = "completed";
+    patient.calendly.completedAt = completedAtDate;
     await patient.save();
 
     await auditDatabaseOperation(req, "mark_meeting_complete", "UPDATE", patientId, {
@@ -950,7 +957,7 @@ export const markMeetingComplete = async (
       success: true,
       message: "Meeting marked as complete",
       meetingStatus: "completed",
-      meetingCompletedAt: patient.meetingCompletedAt,
+      completedAt: patient.calendly.completedAt,
     });
   } catch (error) {
     console.error("Error marking meeting complete:", error);
@@ -1003,11 +1010,18 @@ export const markMeetingCompleteByEmail = async (
       return;
     }
 
-    const previousStatus = patient.meetingStatus;
+    const previousStatus = patient.calendly?.meetingStatus || "none";
 
-    // Update patient meeting status
-    patient.meetingStatus = "completed";
-    patient.meetingCompletedAt = new Date();
+    // Accept completedAt from frontend (admin's local timezone)
+    const { completedAt } = req.body;
+    const completedAtDate = completedAt ? new Date(completedAt) : new Date();
+
+    // Update patient meeting status using nested calendly object
+    if (!patient.calendly) {
+      patient.calendly = {};
+    }
+    patient.calendly.meetingStatus = "completed";
+    patient.calendly.completedAt = completedAtDate;
     await patient.save();
 
     await auditDatabaseOperation(req, "mark_meeting_complete_by_email", "UPDATE", patient._id?.toString(), {
@@ -1022,7 +1036,7 @@ export const markMeetingCompleteByEmail = async (
       success: true,
       message: "Meeting marked as complete",
       meetingStatus: "completed",
-      meetingCompletedAt: patient.meetingCompletedAt,
+      completedAt: patient.calendly.completedAt,
       patientName: patient.name,
     });
   } catch (error) {
