@@ -105,6 +105,9 @@ app.use(cors(corsOptions));
 
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 
+// Calendly webhook needs raw body for signature verification
+app.use('/api/calendly/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json());
 app.use(cookieParser());
 

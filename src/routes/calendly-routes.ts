@@ -1,5 +1,4 @@
 import { Router } from "express";
-import express from "express";
 import {
   generateSingleUseLink,
   // getDoctorMeetings,
@@ -19,7 +18,8 @@ const router = Router();
 
 // Webhook endpoint - public, no auth (uses signature verification instead)
 // Must be before authenticated routes
-router.post("/webhook", express.json(), handleCalendlyWebhook);
+// Note: Raw body parsing is handled in server.ts for signature verification
+router.post("/webhook", handleCalendlyWebhook);
 
 // Patient endpoints (server-side handling) - require patient auth
 router.post(

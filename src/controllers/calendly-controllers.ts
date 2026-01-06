@@ -789,7 +789,15 @@ export const handleCalendlyWebhook = async (
     }
 
     // Get raw body for signature verification
-    const rawBody = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+    // Body comes as Buffer from express.raw() middleware
+    let rawBody: string;
+    if (Buffer.isBuffer(req.body)) {
+      rawBody = req.body.toString('utf8');
+    } else if (typeof req.body === "string") {
+      rawBody = req.body;
+    } else {
+      rawBody = JSON.stringify(req.body);
+    }
 
     // Verify signature (optional in development, required in production)
     if (signature) {
@@ -805,10 +813,8 @@ export const handleCalendlyWebhook = async (
       return;
     }
 
-    // Parse the event
-    const event: CalendlyWebhookEvent = typeof req.body === "string"
-      ? JSON.parse(req.body)
-      : req.body;
+    // Parse the event from the raw body
+    const event: CalendlyWebhookEvent = JSON.parse(rawBody);
 
     console.log(`📅 Calendly webhook received: ${event.event}`);
     console.log(`📋 Webhook payload tracking:`, JSON.stringify(event.payload.tracking, null, 2));
