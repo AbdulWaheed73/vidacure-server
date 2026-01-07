@@ -56,6 +56,16 @@ export type PatientT = {
     completedAt?: Date;
     eventUri?: string;
     inviteeUri?: string;
+    // History of all meetings
+    meetings?: {
+      eventUri: string;
+      inviteeUri?: string;
+      scheduledTime: Date;
+      status: "scheduled" | "completed" | "canceled";
+      completedAt?: Date;
+      source: "pre-login" | "post-login";
+      createdAt: Date;
+    }[];
   };
 
   prescription?: {

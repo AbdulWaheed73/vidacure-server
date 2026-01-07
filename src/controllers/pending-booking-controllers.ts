@@ -178,6 +178,21 @@ export const linkBookingToUser = async (req: AuthenticatedRequest, res: Response
     if (!patient.calendly) {
       patient.calendly = {};
     }
+    if (!patient.calendly.meetings) {
+      patient.calendly.meetings = [];
+    }
+
+    // Add to meetings history
+    patient.calendly.meetings.push({
+      eventUri: pendingBooking.calendlyEventUri!,
+      inviteeUri: pendingBooking.calendlyInviteeUri,
+      scheduledTime: pendingBooking.scheduledTime!,
+      status: "scheduled",
+      source: "pre-login",
+      createdAt: new Date()
+    });
+
+    // Update current meeting fields
     patient.calendly.meetingStatus = "scheduled";
     patient.calendly.scheduledMeetingTime = pendingBooking.scheduledTime;
     patient.calendly.eventUri = pendingBooking.calendlyEventUri;

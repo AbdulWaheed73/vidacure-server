@@ -72,15 +72,35 @@ const PatientSchema: Schema = new Schema(
 
     // Calendly meeting data - grouped for easier management
     calendly: {
+      // Overall meeting status for onboarding gate
       meetingStatus: {
         type: String,
         enum: ["none", "scheduled", "completed"],
         default: "none"
       },
+      // Current/active meeting (latest scheduled or completed)
       scheduledMeetingTime: { type: Date },
       completedAt: { type: Date },
       eventUri: { type: String },
-      inviteeUri: { type: String }
+      inviteeUri: { type: String },
+      // History of all meetings
+      meetings: [{
+        eventUri: { type: String, required: true },
+        inviteeUri: { type: String },
+        scheduledTime: { type: Date, required: true },
+        status: {
+          type: String,
+          enum: ["scheduled", "completed", "canceled"],
+          default: "scheduled"
+        },
+        completedAt: { type: Date },
+        source: {
+          type: String,
+          enum: ["pre-login", "post-login"],
+          default: "pre-login"
+        },
+        createdAt: { type: Date, default: Date.now }
+      }]
     },
 
     prescription: {

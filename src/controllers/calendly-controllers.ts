@@ -1,7 +1,7 @@
 import { Response } from "express";
 import { AuthenticatedRequest } from "../types/generic-types";
 import { AdminAuthenticatedRequest } from "../middleware/admin-auth-middleware";
-import { createSingleUseLink, getCalendlyUserByEmail, getScheduledEvents, getScheduledEventsByInviteeEmail, getEventInvitees } from "../services/calendly-service";
+import { createSingleUseLink, getCalendlyUserByEmail, getScheduledEvents, getScheduledEventsByInviteeEmail, getEventInvitees, getPatientMeetingByStoredUri } from "../services/calendly-service";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
 import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
@@ -437,28 +437,67 @@ export const getPatientMeetings = async (req: AuthenticatedRequest, res: Respons
       return;
     }
 
-    // Fetch scheduled events directly by patient email using organization API
-    const patientMeetings = await getScheduledEventsByInviteeEmail(patient.email);
+    // Get all meetings from patient's history
+    const formattedMeetings: any[] = [];
 
-    // Transform data for frontend
-    const formattedMeetings = patientMeetings.map((meeting: any) => ({
-      id: meeting.uri,
-      patientName: meeting.name || patient.name,
-      startTime: meeting.start_time,
-      endTime: meeting.end_time,
-      status: meeting.status,
-      meetingUrl: meeting.location?.join_url || null,
-      eventType: meeting.event_type?.name || 'Appointment',
-      createdAt: meeting.created_at,
-      cancelUrl: meeting.cancel_url || null,
-      rescheduleUrl: meeting.reschedule_url || null
-    }));
+    // First, add meetings from stored history
+    if (patient.calendly?.meetings && patient.calendly.meetings.length > 0) {
+      for (const meeting of patient.calendly.meetings) {
+        // Try to get real-time details from Calendly for active meetings
+        if (meeting.status === 'scheduled' && meeting.eventUri) {
+          const calendlyData = await getPatientMeetingByStoredUri(
+            meeting.eventUri,
+            meeting.inviteeUri,
+            undefined
+          );
+
+          if (calendlyData.event) {
+            formattedMeetings.push({
+              id: meeting.eventUri,
+              patientName: calendlyData.invitee?.name || patient.name,
+              startTime: calendlyData.event.start_time,
+              endTime: calendlyData.event.end_time,
+              status: calendlyData.event.status,
+              meetingUrl: calendlyData.event.location?.join_url || null,
+              eventType: calendlyData.event.name || 'Appointment',
+              createdAt: calendlyData.event.created_at,
+              cancelUrl: calendlyData.invitee?.cancel_url || null,
+              rescheduleUrl: calendlyData.invitee?.reschedule_url || null,
+              source: meeting.source
+            });
+            continue;
+          }
+        }
+
+        // For completed/canceled meetings or if Calendly lookup failed, use stored data
+        formattedMeetings.push({
+          id: meeting.eventUri,
+          patientName: patient.name,
+          startTime: meeting.scheduledTime,
+          endTime: null, // Not stored in history
+          status: meeting.status === 'completed' ? 'active' : meeting.status,
+          meetingUrl: null,
+          eventType: 'Appointment',
+          createdAt: meeting.createdAt,
+          cancelUrl: null,
+          rescheduleUrl: null,
+          source: meeting.source,
+          completedAt: meeting.completedAt
+        });
+      }
+    }
+
+    // Sort by scheduled time (newest first)
+    formattedMeetings.sort((a, b) =>
+      new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+    );
+
+    console.log(`📅 Returning ${formattedMeetings.length} meetings from history`);
 
     await auditDatabaseOperation(req, "get_patient_meetings", "READ", patientId, {
       patientId,
       doctorId: patient.doctor._id,
-      meetingsCount: formattedMeetings.length,
-      method: "organization_invitee_email"
+      meetingsCount: formattedMeetings.length
     });
 
     res.status(200).json({
@@ -821,20 +860,71 @@ export const handleCalendlyWebhook = async (
 
     switch (event.event) {
       case "invitee.created": {
-        // Extract token from UTM tracking
-        const token = event.payload.tracking?.utm_term;
-        console.log(`🔑 UTM Term token: ${token || 'NOT FOUND'}`);
+        // Extract tracking identifier from UTM
+        const utmTerm = event.payload.tracking?.utm_term;
+        console.log(`🔑 UTM Term: ${utmTerm || 'NOT FOUND'}`);
 
-        if (!token) {
-          console.log("No token in webhook - booking may not be from pre-login flow");
-          res.status(200).json({ received: true, message: "No token found" });
+        const scheduledTime = new Date(event.payload.scheduled_event.start_time);
+        const eventUri = event.payload.scheduled_event.uri;
+        const inviteeUri = event.payload.uri;
+
+        // Check if this is a post-login booking (patientId prefixed with "patient_")
+        if (utmTerm?.startsWith("patient_")) {
+          const patientId = utmTerm.replace("patient_", "");
+          console.log(`📱 Post-login booking for patient: ${patientId}`);
+
+          const patient = await PatientSchema.findById(patientId);
+          if (!patient) {
+            console.log(`Patient not found: ${patientId}`);
+            res.status(200).json({ received: true, message: "Patient not found" });
+            return;
+          }
+
+          // Create meeting record
+          const meetingRecord = {
+            eventUri,
+            inviteeUri,
+            scheduledTime,
+            status: "scheduled" as const,
+            source: "post-login" as const,
+            createdAt: new Date()
+          };
+
+          // Initialize calendly object if needed
+          if (!patient.calendly) {
+            patient.calendly = {};
+          }
+          if (!patient.calendly.meetings) {
+            patient.calendly.meetings = [];
+          }
+
+          // Add to meetings history
+          patient.calendly.meetings.push(meetingRecord);
+
+          // Update current meeting fields
+          patient.calendly.meetingStatus = "scheduled";
+          patient.calendly.scheduledMeetingTime = scheduledTime;
+          patient.calendly.eventUri = eventUri;
+          patient.calendly.inviteeUri = inviteeUri;
+
+          await patient.save();
+
+          console.log(`✅ Post-login booking saved for patient: ${patientId}`);
+          res.status(200).json({ received: true, bookingCreated: true, source: "post-login" });
           return;
         }
 
-        // Verify pending session exists
-        const pendingSession = await PendingSession.findOne({ token });
+        // Pre-login flow (existing logic)
+        if (!utmTerm) {
+          console.log("No token in webhook - booking may not be from tracked flow");
+          res.status(200).json({ received: true, message: "No tracking token found" });
+          return;
+        }
+
+        // Verify pending session exists (pre-login flow)
+        const pendingSession = await PendingSession.findOne({ token: utmTerm });
         if (!pendingSession) {
-          console.log(`Session not found for token: ${token}`);
+          console.log(`Session not found for token: ${utmTerm}`);
           res.status(200).json({ received: true, message: "Session not found" });
           return;
         }
@@ -845,46 +935,79 @@ export const handleCalendlyWebhook = async (
 
         // Create pending booking
         const pendingBooking = new PendingBooking({
-          token,
-          calendlyEventUri: event.payload.scheduled_event.uri,
-          calendlyInviteeUri: event.payload.uri,
+          token: utmTerm,
+          calendlyEventUri: eventUri,
+          calendlyInviteeUri: inviteeUri,
           inviteeEmail: event.payload.email,
           inviteeName: event.payload.name,
-          scheduledTime: new Date(event.payload.scheduled_event.start_time),
+          scheduledTime,
           status: "active",
           expiresAt,
         });
 
         await pendingBooking.save();
 
-        console.log(`✅ Created pending booking for token: ${token}`);
-        res.status(200).json({ received: true, bookingCreated: true });
+        console.log(`✅ Created pending booking for token: ${utmTerm}`);
+        res.status(200).json({ received: true, bookingCreated: true, source: "pre-login" });
         break;
       }
 
       case "invitee.canceled": {
-        // Find and update pending booking by Calendly invitee URI
+        const canceledInviteeUri = event.payload.uri;
+
+        // First, try to find and update pending booking
         const booking = await PendingBooking.findOneAndUpdate(
-          { calendlyInviteeUri: event.payload.uri },
+          { calendlyInviteeUri: canceledInviteeUri },
           { status: "canceled" }
         );
 
         if (booking) {
-          console.log(`❌ Marked booking as canceled: ${event.payload.uri}`);
-
-          // Also update patient if already linked - clear all meeting-related fields
-          if (booking.linkedUserId) {
-            await PatientSchema.findByIdAndUpdate(booking.linkedUserId, {
-              "calendly.meetingStatus": "none",
-              "calendly.scheduledMeetingTime": null,
-              "calendly.eventUri": null,
-              "calendly.inviteeUri": null,
-            });
-            console.log(`🧹 Cleared meeting data for patient: ${booking.linkedUserId}`);
-          }
+          console.log(`❌ Marked pending booking as canceled: ${canceledInviteeUri}`);
         }
 
-        res.status(200).json({ received: true, bookingCanceled: !!booking });
+        // Also find and update any patient with this meeting
+        const patient = await PatientSchema.findOne({
+          $or: [
+            { "calendly.inviteeUri": canceledInviteeUri },
+            { "calendly.meetings.inviteeUri": canceledInviteeUri }
+          ]
+        });
+
+        if (patient) {
+          // Update meeting in history array
+          if (patient.calendly?.meetings) {
+            const meetingIndex = patient.calendly.meetings.findIndex(
+              m => m.inviteeUri === canceledInviteeUri
+            );
+            if (meetingIndex !== -1) {
+              patient.calendly.meetings[meetingIndex].status = "canceled";
+            }
+          }
+
+          // If this was the current meeting, clear it
+          if (patient.calendly?.inviteeUri === canceledInviteeUri) {
+            patient.calendly.meetingStatus = "none";
+            patient.calendly.scheduledMeetingTime = undefined;
+            patient.calendly.eventUri = undefined;
+            patient.calendly.inviteeUri = undefined;
+          }
+
+          await patient.save();
+          console.log(`🧹 Updated meeting status for patient: ${patient._id}`);
+        }
+
+        // Also handle linked user from pending booking
+        if (booking?.linkedUserId && (!patient || patient._id?.toString() !== booking.linkedUserId.toString())) {
+          await PatientSchema.findByIdAndUpdate(booking.linkedUserId, {
+            "calendly.meetingStatus": "none",
+            "calendly.scheduledMeetingTime": null,
+            "calendly.eventUri": null,
+            "calendly.inviteeUri": null,
+          });
+          console.log(`🧹 Cleared meeting data for linked patient: ${booking.linkedUserId}`);
+        }
+
+        res.status(200).json({ received: true, bookingCanceled: true });
         break;
       }
 
@@ -943,6 +1066,18 @@ export const markMeetingComplete = async (
     }
     patient.calendly.meetingStatus = "completed";
     patient.calendly.completedAt = completedAtDate;
+
+    // Also update the current meeting in the meetings array
+    if (patient.calendly.meetings && patient.calendly.eventUri) {
+      const meetingIndex = patient.calendly.meetings.findIndex(
+        m => m.eventUri === patient.calendly!.eventUri
+      );
+      if (meetingIndex !== -1) {
+        patient.calendly.meetings[meetingIndex].status = "completed";
+        patient.calendly.meetings[meetingIndex].completedAt = completedAtDate;
+      }
+    }
+
     await patient.save();
 
     await auditDatabaseOperation(req, "mark_meeting_complete", "UPDATE", patientId, {
@@ -1022,6 +1157,18 @@ export const markMeetingCompleteByEmail = async (
     }
     patient.calendly.meetingStatus = "completed";
     patient.calendly.completedAt = completedAtDate;
+
+    // Also update the current meeting in the meetings array
+    if (patient.calendly.meetings && patient.calendly.eventUri) {
+      const meetingIndex = patient.calendly.meetings.findIndex(
+        m => m.eventUri === patient.calendly!.eventUri
+      );
+      if (meetingIndex !== -1) {
+        patient.calendly.meetings[meetingIndex].status = "completed";
+        patient.calendly.meetings[meetingIndex].completedAt = completedAtDate;
+      }
+    }
+
     await patient.save();
 
     await auditDatabaseOperation(req, "mark_meeting_complete_by_email", "UPDATE", patient._id?.toString(), {
