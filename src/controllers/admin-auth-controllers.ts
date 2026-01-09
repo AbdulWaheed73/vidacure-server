@@ -15,6 +15,14 @@ import {
 import { CriiptoUserClaims } from "../types/generic-types";
 import { browserDetails } from "../middleware/auth-middleware";
 
+// Helper to get frontend URL without trailing slash
+const getFrontendUrl = (): string => {
+  const url = process.env.NODE_ENV === "production"
+    ? process.env.PROD_FRONTEND_URL
+    : process.env.DEV_FRONTEND_URL;
+  return url?.replace(/\/+$/, '') || '';
+};
+
 /**
  * Get admin-specific redirect URI
  * Uses request headers to dynamically construct the URI (same as regular auth)
@@ -119,10 +127,7 @@ export const handleAdminCallback = async (
 
     if (!state || state !== storedState) {
       console.error("❌ Invalid admin state parameter");
-      const frontendUrl =
-        process.env.NODE_ENV === "production"
-          ? process.env.PROD_FRONTEND_URL
-          : process.env.DEV_FRONTEND_URL;
+      const frontendUrl = getFrontendUrl();
       res.redirect(`${frontendUrl}/admin/login?error=invalid_state`);
       return;
     }
@@ -132,20 +137,14 @@ export const handleAdminCallback = async (
 
     if (error) {
       console.error("❌ Admin OAuth error:", error);
-      const frontendUrl =
-        process.env.NODE_ENV === "production"
-          ? process.env.PROD_FRONTEND_URL
-          : process.env.DEV_FRONTEND_URL;
+      const frontendUrl = getFrontendUrl();
       res.redirect(`${frontendUrl}/admin/login?error=${encodeURIComponent(error)}`);
       return;
     }
 
     if (!code) {
       console.error("❌ No authorization code received for admin login");
-      const frontendUrl =
-        process.env.NODE_ENV === "production"
-          ? process.env.PROD_FRONTEND_URL
-          : process.env.DEV_FRONTEND_URL;
+      const frontendUrl = getFrontendUrl();
       res.redirect(`${frontendUrl}/admin/login?error=no_code`);
       return;
     }
@@ -167,13 +166,8 @@ export const handleAdminCallback = async (
     // Check if token exchange was successful
     if ("error" in tokens) {
       console.error("❌ Admin token exchange failed:", tokens.error);
-      const frontendUrl =
-        process.env.NODE_ENV === "production"
-          ? process.env.PROD_FRONTEND_URL
-          : process.env.DEV_FRONTEND_URL;
-      res.redirect(
-        `${frontendUrl}/admin/login?error=token_exchange_failed`
-      );
+      const frontendUrl = getFrontendUrl();
+      res.redirect(`${frontendUrl}/admin/login?error=token_exchange_failed`);
       return;
     }
 
@@ -189,10 +183,7 @@ export const handleAdminCallback = async (
       console.log("👤 Admin Criipto token claims:", criiptoToken);
     } catch (verificationError) {
       console.error("❌ Admin Criipto token verification failed:", verificationError);
-      const frontendUrl =
-        process.env.NODE_ENV === "production"
-          ? process.env.PROD_FRONTEND_URL
-          : process.env.DEV_FRONTEND_URL;
+      const frontendUrl = getFrontendUrl();
       res.redirect(
         `${frontendUrl}/admin/login?error=token_verification_failed&message=${encodeURIComponent("Token verification failed.")}`
       );
@@ -204,10 +195,7 @@ export const handleAdminCallback = async (
 
     if (!admin) {
       console.error("❌ Admin not found - access denied");
-      const frontendUrl =
-        process.env.NODE_ENV === "production"
-          ? process.env.PROD_FRONTEND_URL
-          : process.env.DEV_FRONTEND_URL;
+      const frontendUrl = getFrontendUrl();
       res.redirect(
         `${frontendUrl}/admin/login?error=not_admin&message=${encodeURIComponent("Access denied. Admin credentials required.")}`
       );
@@ -243,20 +231,14 @@ export const handleAdminCallback = async (
     });
 
     // Redirect to admin dashboard
-    const frontendUrl =
-      process.env.NODE_ENV === "production"
-        ? process.env.PROD_FRONTEND_URL
-        : process.env.DEV_FRONTEND_URL;
+    const frontendUrl = getFrontendUrl();
     res.redirect(
       `${frontendUrl}/admin?auth=success&message=${encodeURIComponent("Admin login successful!")}`
     );
   } catch (error) {
     console.error("❌ Admin callback error:", error);
 
-    const frontendUrl =
-      process.env.NODE_ENV === "production"
-        ? process.env.PROD_FRONTEND_URL
-        : process.env.DEV_FRONTEND_URL;
+    const frontendUrl = getFrontendUrl();
     res.redirect(
       `${frontendUrl}/admin/login?error=authentication_failed&message=${encodeURIComponent("Admin authentication failed. Please try again.")}`
     );

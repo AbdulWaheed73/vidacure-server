@@ -4,6 +4,14 @@ import PatientSchema from "../schemas/patient-schema";
 import Stripe from "stripe";
 import { assignDoctorRoundRobin } from "../services/doctor-assignment-service";
 
+// Helper to get frontend URL without trailing slash
+const getFrontendUrl = (): string => {
+  const url = process.env.NODE_ENV === "production"
+    ? process.env.PROD_FRONTEND_URL
+    : process.env.DEV_FRONTEND_URL;
+  return url?.replace(/\/+$/, '') || '';
+};
+
 // Helper function to log critical webhook errors
 const logCriticalWebhookError = (
   context: string,
@@ -239,10 +247,7 @@ export const createCheckoutSession = async (
       });
     }
 
-    const isProduction = process.env.NODE_ENV === "production";
-    const frontendUrl = isProduction
-      ? process.env.PROD_FRONTEND_URL
-      : process.env.DEV_FRONTEND_URL;
+    const frontendUrl = getFrontendUrl();
 
     // Validate frontend URL is set
     if (!frontendUrl) {
@@ -423,10 +428,7 @@ export const createPortalSession = async (
       return res.status(404).json({ error: "No Stripe customer found" });
     }
 
-    const isProduction = process.env.NODE_ENV === "production";
-    const frontendUrl = isProduction
-      ? process.env.PROD_FRONTEND_URL
-      : process.env.DEV_FRONTEND_URL;
+    const frontendUrl = getFrontendUrl();
 
     // Validate frontend URL is set
     if (!frontendUrl) {
