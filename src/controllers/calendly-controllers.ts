@@ -133,10 +133,11 @@ export const createPatientBookingLink = async (req: AuthenticatedRequest, res: R
     // Generate single-use scheduling link
     const schedulingLink = await createSingleUseLink(calendlyEventName, doctorUri);
 
-    // Create pre-fill URL with patient data
+    // Create pre-fill URL with patient data and UTM tracking
     const prefillParams = new URLSearchParams({
       'name': patient.name,
-      'email': patient.email
+      'email': patient.email,
+      'utm_term': `patient_${patientId}` // Required for webhook to identify patient
     });
 
     const schedulingLinkWithPrefill = `${schedulingLink}?${prefillParams}`;
