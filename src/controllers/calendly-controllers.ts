@@ -876,8 +876,26 @@ export const handleCalendlyWebhook = async (
 
           const patient = await PatientSchema.findById(patientId);
           if (!patient) {
-            console.log(`Patient not found: ${patientId}`);
-            res.status(200).json({ received: true, message: "Patient not found" });
+            console.error(`❌ Patient not found for webhook: ${patientId} - Calendly should retry`);
+            res.status(500).json({ error: "Patient not found - retry needed" });
+            return;
+          }
+
+          // Initialize calendly object if needed
+          if (!patient.calendly) {
+            patient.calendly = {};
+          }
+          if (!patient.calendly.meetings) {
+            patient.calendly.meetings = [];
+          }
+
+          // Check for duplicate (idempotency) - prevent duplicate bookings from webhook retries
+          const existingMeeting = patient.calendly.meetings.find(
+            m => m.eventUri === eventUri
+          );
+          if (existingMeeting) {
+            console.log(`⚠️ Meeting already exists for eventUri: ${eventUri} - skipping duplicate`);
+            res.status(200).json({ received: true, message: "Already processed", duplicate: true });
             return;
           }
 
@@ -890,14 +908,6 @@ export const handleCalendlyWebhook = async (
             source: "post-login" as const,
             createdAt: new Date()
           };
-
-          // Initialize calendly object if needed
-          if (!patient.calendly) {
-            patient.calendly = {};
-          }
-          if (!patient.calendly.meetings) {
-            patient.calendly.meetings = [];
-          }
 
           // Add to meetings history
           patient.calendly.meetings.push(meetingRecord);
@@ -925,8 +935,16 @@ export const handleCalendlyWebhook = async (
         // Verify pending session exists (pre-login flow)
         const pendingSession = await PendingSession.findOne({ token: utmTerm });
         if (!pendingSession) {
-          console.log(`Session not found for token: ${utmTerm}`);
-          res.status(200).json({ received: true, message: "Session not found" });
+          console.error(`❌ Session not found for token: ${utmTerm} - Calendly should retry`);
+          res.status(500).json({ error: "Session not found - retry needed" });
+          return;
+        }
+
+        // Check for duplicate pending booking (idempotency)
+        const existingPendingBooking = await PendingBooking.findOne({ calendlyEventUri: eventUri });
+        if (existingPendingBooking) {
+          console.log(`⚠️ Pending booking already exists for eventUri: ${eventUri} - skipping duplicate`);
+          res.status(200).json({ received: true, message: "Already processed", duplicate: true });
           return;
         }
 
@@ -1057,9 +1075,35 @@ export const markMeetingComplete = async (
 
     const previousStatus = patient.calendly?.meetingStatus || "none";
 
-    // Accept completedAt from frontend (admin's local timezone)
-    const { completedAt } = req.body;
+    // Accept completedAt and force flag from frontend
+    const { completedAt, force } = req.body;
     const completedAtDate = completedAt ? new Date(completedAt) : new Date();
+
+    // Validate meeting end time (unless force override is used)
+    if (!force) {
+      // Find the current meeting to check its scheduled time
+      const currentMeeting = patient.calendly?.meetings?.find(
+        m => m.eventUri === patient.calendly?.eventUri
+      );
+
+      if (currentMeeting?.scheduledTime) {
+        // Calculate meeting end time (default 30 min duration - can be enhanced to fetch from Calendly)
+        const meetingDurationMs = 30 * 60 * 1000; // 30 minutes in milliseconds
+        const meetingEndTime = new Date(currentMeeting.scheduledTime).getTime() + meetingDurationMs;
+
+        if (Date.now() < meetingEndTime) {
+          console.log(`⚠️ Admin ${adminId} tried to mark meeting complete before it ended`);
+          res.status(400).json({
+            error: "Cannot mark meeting as complete",
+            message: "Meeting has not ended yet. Use force=true to override.",
+            scheduledTime: currentMeeting.scheduledTime,
+            estimatedEndTime: new Date(meetingEndTime).toISOString(),
+            requiresForce: true
+          });
+          return;
+        }
+      }
+    }
 
     // Update patient meeting status using nested calendly object
     if (!patient.calendly) {
@@ -1148,9 +1192,35 @@ export const markMeetingCompleteByEmail = async (
 
     const previousStatus = patient.calendly?.meetingStatus || "none";
 
-    // Accept completedAt from frontend (admin's local timezone)
-    const { completedAt } = req.body;
+    // Accept completedAt and force flag from frontend
+    const { completedAt, force } = req.body;
     const completedAtDate = completedAt ? new Date(completedAt) : new Date();
+
+    // Validate meeting end time (unless force override is used)
+    if (!force) {
+      // Find the current meeting to check its scheduled time
+      const currentMeeting = patient.calendly?.meetings?.find(
+        m => m.eventUri === patient.calendly?.eventUri
+      );
+
+      if (currentMeeting?.scheduledTime) {
+        // Calculate meeting end time (default 30 min duration - can be enhanced to fetch from Calendly)
+        const meetingDurationMs = 30 * 60 * 1000; // 30 minutes in milliseconds
+        const meetingEndTime = new Date(currentMeeting.scheduledTime).getTime() + meetingDurationMs;
+
+        if (Date.now() < meetingEndTime) {
+          console.log(`⚠️ Admin ${adminId} tried to mark meeting complete by email before it ended`);
+          res.status(400).json({
+            error: "Cannot mark meeting as complete",
+            message: "Meeting has not ended yet. Use force=true to override.",
+            scheduledTime: currentMeeting.scheduledTime,
+            estimatedEndTime: new Date(meetingEndTime).toISOString(),
+            requiresForce: true
+          });
+          return;
+        }
+      }
+    }
 
     // Update patient meeting status using nested calendly object
     if (!patient.calendly) {

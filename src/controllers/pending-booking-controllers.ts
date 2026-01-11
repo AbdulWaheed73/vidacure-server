@@ -268,13 +268,9 @@ export const getMeetingStatus = async (req: AuthenticatedRequest, res: Response)
     const meetingStatus = patient.calendly?.meetingStatus || "none";
     const scheduledMeetingTime = patient.calendly?.scheduledMeetingTime;
 
-    let isMeetingGatePassed = false;
-    if (meetingStatus === "completed") {
-      isMeetingGatePassed = true;
-    } else if (meetingStatus === "scheduled" && scheduledMeetingTime) {
-      // Auto-unlock if meeting time has passed
-      isMeetingGatePassed = new Date() > scheduledMeetingTime;
-    }
+    // Meeting gate only passes when meeting is marked as "completed" by admin
+    // This prevents users from bypassing consultation by just waiting for time to pass
+    const isMeetingGatePassed = meetingStatus === "completed";
 
     res.status(200).json({
       success: true,
