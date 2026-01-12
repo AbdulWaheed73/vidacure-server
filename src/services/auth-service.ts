@@ -116,6 +116,120 @@ export async function verifyCriiptoToken(token: string): Promise<CriiptoUserClai
   });
 }
 
+/**
+ * Find existing user by SSN hash - does NOT create new users
+ * Used by mobile app (patient portal model)
+ * @returns user if found, null if not found
+ */
+export async function findUserOnly(criiptoToken: CriiptoUserClaims): Promise<{ user: PatientT | DoctorT | null, error?: 'USER_NOT_FOUND' | 'ONBOARDING_REQUIRED' }> {
+  const { ssn, name, given_name, family_name } = criiptoToken;
+
+  if (!ssn || !isValidSwedishSSN(ssn)) {
+    throw new Error('Invalid or missing SSN from IdP');
+  }
+
+  const ssnHash = hashSSN(ssn);
+
+  try {
+    // First, try to find existing doctor by SSN hash
+    const existingDoctor = await Doctor.findOne({ ssnHash });
+
+    if (existingDoctor) {
+      // Check if doctor has placeholder names from admin creation
+      const hasPlaceholderName =
+        existingDoctor.name === 'Pending BankID Login' ||
+        existingDoctor.given_name === 'Pending' ||
+        existingDoctor.family_name === 'BankID';
+
+      // Update names if placeholders exist and BankID provides data
+      if (hasPlaceholderName && (name || given_name || family_name)) {
+        existingDoctor.name = name || `${given_name} ${family_name}`.trim();
+        existingDoctor.given_name = given_name || '';
+        existingDoctor.family_name = family_name || '';
+
+        console.log("✅ Updated doctor name from BankID:", {
+          userId: existingDoctor._id?.toString(),
+          oldName: 'Pending BankID Login',
+          newName: existingDoctor.name
+        });
+
+        // Update Stream Chat profile with new name
+        await streamChatApi.createStreamUser(existingDoctor);
+      }
+
+      // Update last login timestamp
+      existingDoctor.lastLogin = new Date();
+      await existingDoctor.save();
+
+      console.log("🔐 Existing doctor authenticated (mobile):", {
+        userId: existingDoctor._id?.toString(),
+        name: existingDoctor.name,
+        role: existingDoctor.role,
+        lastLogin: existingDoctor.lastLogin
+      });
+
+      return { user: existingDoctor };
+    }
+
+    // Second, try to find existing patient by SSN hash
+    const existingPatient = await Patient.findOne({ ssnHash });
+
+    if (existingPatient) {
+      // Check if patient has completed onboarding
+      if (!existingPatient.hasCompletedOnboarding) {
+        console.log("⚠️ Patient found but onboarding not completed (mobile):", {
+          userId: existingPatient._id?.toString(),
+          name: existingPatient.name
+        });
+        return { user: null, error: 'ONBOARDING_REQUIRED' };
+      }
+
+      // Check if patient has placeholder names
+      const hasPlaceholderName =
+        existingPatient.name === 'Pending BankID Login' ||
+        existingPatient.given_name === 'Pending' ||
+        existingPatient.family_name === 'BankID';
+
+      // Update names if placeholders exist and BankID provides data
+      if (hasPlaceholderName && (name || given_name || family_name)) {
+        existingPatient.name = name || `${given_name} ${family_name}`.trim();
+        existingPatient.given_name = given_name || '';
+        existingPatient.family_name = family_name || '';
+
+        console.log("✅ Updated patient name from BankID:", {
+          userId: existingPatient._id?.toString(),
+          oldName: 'Pending BankID Login',
+          newName: existingPatient.name
+        });
+
+        // Update Stream Chat profile with new name
+        await streamChatApi.createStreamUser(existingPatient);
+      }
+
+      // Update last login timestamp
+      existingPatient.lastLogin = new Date();
+      await existingPatient.save();
+
+      console.log("🔐 Existing patient authenticated (mobile):", {
+        userId: existingPatient._id?.toString(),
+        name: existingPatient.name,
+        role: existingPatient.role,
+        lastLogin: existingPatient.lastLogin
+      });
+
+      return { user: existingPatient };
+    }
+
+    // User doesn't exist - return error (don't create)
+    console.log("⚠️ User not found for mobile login:", { ssnHash: ssnHash.substring(0, 10) + '...' });
+    return { user: null, error: 'USER_NOT_FOUND' };
+
+  } catch (error) {
+    console.error("❌ Error in findUserOnly:", error);
+    throw new Error(`Failed to find user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
 export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise<{ user: PatientT | DoctorT, isNewUser: boolean }> {
   const { ssn, name, given_name, family_name } = criiptoToken;
 

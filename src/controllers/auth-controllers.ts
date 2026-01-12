@@ -5,6 +5,7 @@ import { codeExchange, buildAuthorizeURL } from "@criipto/oidc";
 import { ErrorResponse } from "@criipto/oidc/dist/response";
 import {
   findOrCreateUser,
+  findUserOnly,
   createAppJWT,
   generateRandomState,
   generateCSRFToken,
@@ -133,21 +134,60 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Find or create user based on Criipto claims
-    const { user, isNewUser } = await findOrCreateUser(criiptoUserClaims);
-    
-    // Audit log for user authentication (we'll create a special request with user info)
+    // Find existing user only - mobile app does NOT create new users (patient portal model)
+    const { user, error: findError } = await findUserOnly(criiptoUserClaims);
+
+    // Handle user not found - mobile app requires existing web registration
+    if (!user) {
+      console.log(`⚠️ Mobile login rejected: ${findError}`);
+
+      // Audit the rejected login attempt
+      const auditReq = {
+        ...req,
+        user: { userId: 'unknown', role: 'unknown' }
+      } as any;
+
+      await auditDatabaseOperation(auditReq, "user_login_mobile_rejected", "READ", undefined,
+                                 { authMethod: "bankid_mobile", reason: findError, ssn: criiptoUserClaims.ssn ? "provided" : "missing" });
+
+      if (findError === 'USER_NOT_FOUND') {
+        res.status(404).json({
+          success: false,
+          error: 'USER_NOT_FOUND',
+          message: 'No Vidacure account was found. This app is only available for registered patients.',
+        });
+        return;
+      }
+
+      if (findError === 'ONBOARDING_REQUIRED') {
+        res.status(403).json({
+          success: false,
+          error: 'ONBOARDING_REQUIRED',
+          message: 'Please complete your registration to use this app.',
+        });
+        return;
+      }
+
+      // Fallback for unknown errors
+      res.status(401).json({
+        success: false,
+        error: 'AUTHENTICATION_FAILED',
+        message: 'Authentication failed. Please try again.',
+      });
+      return;
+    }
+
+    // Audit log for successful user authentication
     const auditReq = {
       ...req,
       user: { userId: user._id?.toString() || '', role: user.role }
     } as AuthenticatedRequest;
-    
-    await auditDatabaseOperation(auditReq, isNewUser ? "user_registration_mobile" : "user_login_mobile", 
-                               isNewUser ? "CREATE" : "READ", user._id?.toString(), 
+
+    await auditDatabaseOperation(auditReq, "user_login_mobile", "READ", user._id?.toString(),
                                { authMethod: "bankid_mobile", ssn: criiptoUserClaims.ssn ? "provided" : "missing" });
 
     console.log(
-      `👤 ${isNewUser ? "Created new user" : "Found existing user"}:`,
+      `👤 Found existing user (mobile):`,
       {
         userId: user._id?.toString(),
         name: user.name,
@@ -163,9 +203,7 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
     // Return the app JWT in response body (no cookies for mobile)
     res.json({
       success: true,
-      message: isNewUser
-        ? "Account created successfully"
-        : "Authentication successful",
+      message: "Authentication successful",
       token: appJWT,
       user: {
         userId: user._id?.toString(),
