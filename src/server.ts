@@ -16,7 +16,7 @@ import prescriptionRoutes from "./routes/prescription-routes";
 import userDeletionRoutes from "./routes/user-deletion-routes";
 import adminNotificationRoutes from "./routes/admin-notification-routes";
 import pendingBookingRoutes from "./routes/pending-booking-routes";
-import { requireAuth, requireCSRF, requireRole } from "./middleware/auth-middleware";
+import { requireAuth, requireCSRF, requireRole, requireActiveSubscription } from "./middleware/auth-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
 import os from 'os';
 
@@ -133,9 +133,9 @@ app.use("/api/payment", paymentRoutes);
 app.use("/api/pending-booking", pendingBookingRoutes);
 app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), patientRoutes);
 app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), doctorRoutes);
-app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), prescriptionRoutes);
+app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), requireActiveSubscription, prescriptionRoutes);
 // Chat routes without CSRF for now - will add CSRF to individual routes that need it
-app.use("/api/chat", requireAuth, auditMiddleware, chatRoutes);
+app.use("/api/chat", requireAuth, auditMiddleware, requireActiveSubscription, chatRoutes);
 // Calendly routes - the webhook handler inside uses express.json() and bypasses auth via route-level check
 app.use("/api/calendly", calendlyRoutes);
 

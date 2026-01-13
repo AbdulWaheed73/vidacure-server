@@ -1,6 +1,7 @@
 import { Response, NextFunction } from "express";
 import { verifyAppJWT } from "../services/auth-service";
 import { AuthenticatedRequest } from "../types/generic-types";
+import PatientSchema from "../schemas/patient-schema";
 
 
 export function browserDetails(
@@ -155,6 +156,65 @@ export function requireRole(allowedRoles: string | string[]) {
     }
     next();
   };
+}
+
+// Subscription validation middleware
+export async function requireActiveSubscription(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  if (!req.user) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  // Skip subscription check for doctors
+  if (req.user.role === "doctor") {
+    next();
+    return;
+  }
+
+  // For patients, verify active subscription
+  if (req.user.role === "patient") {
+    try {
+      const patient = await PatientSchema.findById(req.user.userId)
+        .select("subscription.status")
+        .lean();
+
+      if (!patient) {
+        res.status(404).json({ error: "Patient not found" });
+        return;
+      }
+
+      const validStatuses = ["active", "trialing"];
+      const subscriptionStatus = patient.subscription?.status;
+
+      if (!subscriptionStatus || !validStatuses.includes(subscriptionStatus)) {
+        console.log(
+          `❌ Subscription check failed for patient ${req.user.userId}: status is "${subscriptionStatus || "none"}"`
+        );
+        res.status(403).json({
+          error: "Subscription required",
+          message: "An active subscription is required to access this feature",
+          currentStatus: subscriptionStatus || "none"
+        });
+        return;
+      }
+
+      console.log(
+        `✅ Subscription check passed for patient ${req.user.userId}: status is "${subscriptionStatus}"`
+      );
+      next();
+    } catch (error) {
+      console.error("❌ Error checking subscription status:", error);
+      res.status(500).json({ error: "Failed to verify subscription status" });
+      return;
+    }
+  } else {
+    // For any other roles (admin, superadmin, etc.), skip subscription check
+    next();
+  }
 }
 
 // Combined middleware for doctor-only access
