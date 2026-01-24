@@ -1,7 +1,7 @@
 import express from "express";
 import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
-import { streamChatApi } from "../services/stream-chat-api";
+import { supabaseChatApi } from "../services/supabase-chat-api";
 import stripeService from "../services/stripe-service";
 import { hashSSN, isValidSwedishSSN } from "../services/auth-service";
 
@@ -170,8 +170,8 @@ export const reassignDoctor = async (req: express.Request, res: express.Response
       return res.status(400).json({ error: 'Patient is already assigned to this doctor' });
     }
 
-    // Use existing reassignDoctor function from stream-chat-api
-    await streamChatApi.reassignDoctor(patientId, newDoctorId, oldDoctorId);
+    // Use Supabase chat API for reassignment (handles participant updates)
+    await supabaseChatApi.reassignDoctor(patientId, newDoctorId, oldDoctorId);
 
     // Fetch updated patient and doctor info
     const [updatedPatient, updatedNewDoctor, updatedOldDoctor] = await Promise.all([

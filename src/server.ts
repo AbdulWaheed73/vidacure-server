@@ -9,6 +9,7 @@ import patientRoutes from "./routes/patient-routes";
 import doctorRoutes from "./routes/doctor-routes";
 import paymentRoutes from "./routes/payment-routes";
 import chatRoutes from "./routes/chat-routes";
+import supabaseChatRoutes from "./routes/supabase-chat-routes";
 import calendlyRoutes from "./routes/calendly-routes";
 import adminRoutes from "./routes/admin-routes";
 import adminAuthRoutes from "./routes/admin-auth-routes";
@@ -136,6 +137,8 @@ app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('d
 app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), requireActiveSubscription, prescriptionRoutes);
 // Chat routes without CSRF for now - will add CSRF to individual routes that need it
 app.use("/api/chat", requireAuth, auditMiddleware, requireActiveSubscription, chatRoutes);
+// Supabase Chat routes - new implementation
+app.use("/api/supabase-chat", supabaseChatRoutes);
 // Calendly routes - the webhook handler inside uses express.json() and bypasses auth via route-level check
 app.use("/api/calendly", calendlyRoutes);
 
@@ -150,12 +153,6 @@ app.use("/api/users", userDeletionRoutes);
 
 // Admin notification routes
 app.use("/api/admin/notifications", adminNotificationRoutes);
-
-app.post('/1401621/chat', express.raw({type: 'application/json'}), (req, res) => {
-  console.log("\n\n\nheyy im hit !!!\n\n\n\n");
-  console.log("Webhook received:", req.body);
-  res.status(200).send('OK'); // Important: Send response back
-});
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🌟 Server is running on port ${PORT}`);

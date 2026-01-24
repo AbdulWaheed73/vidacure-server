@@ -92,8 +92,11 @@ export type PatientT = {
     updatedAt: Date;
   }[];
 
-  // Stream Chat related fields
+  // Stream Chat related fields (legacy - to be deprecated)
   chatChannelId?: string; // Store the patient's medical channel ID
+
+  // Supabase Chat related fields
+  supabaseConversationId?: string; // Store the patient's Supabase conversation UUID
 
   createdAt: Date;
   updatedAt: Date;

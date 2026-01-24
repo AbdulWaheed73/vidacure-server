@@ -23,8 +23,7 @@ router.get('/patient/:patientId/channel', requireAuth, requireRole('doctor'), ge
 router.get('/doctor/channels', requireAuth, requireRole('doctor'), getDoctorChannels);
 
 // Admin routes for doctor reassignment
-router.post('/reassign-doctor', requireAuth, requireRole('admin'), reassignDoctor);
-router.post('/reassign-doctor', requireAuth, requireRole('superadmin'), reassignDoctor);
+router.post('/reassign-doctor', requireAuth, requireRole(['admin', 'superadmin']), reassignDoctor);
 
 // Send system message (admin/doctor only)
 router.post('/system-message', requireAuth, sendSystemMessage);

@@ -1,9 +1,9 @@
 import DoctorSchema from "../schemas/doctor-schema";
-import { getOrCreatePatientChannel } from "./stream-chat-api";
+import { supabaseChatApi } from "./supabase-chat-api";
 
 /**
  * Assigns a doctor to a patient using round-robin logic (least patients first)
- * Also creates the Stream Chat channel for patient-doctor communication
+ * Also creates the Supabase conversation for patient-doctor communication
  */
 export const assignDoctorRoundRobin = async (patientId: string) => {
   try {
@@ -31,18 +31,19 @@ export const assignDoctorRoundRobin = async (patientId: string) => {
 
     console.log(`[Doctor Assignment] Selected doctor: ${selectedDoctor.name} (ID: ${selectedDoctor._id}) with ${minPatients} patients`);
 
-    // Create chat channel and update patient-doctor relationship
-    const channel = await getOrCreatePatientChannel(
+    // Create Supabase conversation and update patient-doctor relationship
+    const result = await supabaseChatApi.getOrCreatePatientConversation(
       patientId,
       selectedDoctor._id.toString()
     );
 
-    console.log(`[Doctor Assignment] Successfully assigned doctor and created channel: ${channel.id}`);
+    console.log(`[Doctor Assignment] Successfully assigned doctor and created conversation: ${result.conversationId}`);
 
     return {
       doctorId: selectedDoctor._id,
       doctorName: selectedDoctor.name,
-      channelId: channel.id,
+      conversationId: result.conversationId,
+      channelId: result.channelId,
       previousPatientCount: minPatients
     };
 

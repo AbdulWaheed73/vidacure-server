@@ -7,7 +7,6 @@ import Patient from "../schemas/patient-schema";
 import Doctor from "../schemas/doctor-schema";
 import { PatientT } from "../types/patient-type";
 import { DoctorT } from "../types/doctor-type";
-import { streamChatApi } from "./stream-chat-api";
 
 // Environment variables
 const domain: string = process.env.CRIIPTO_DOMAIN as string;
@@ -152,9 +151,6 @@ export async function findUserOnly(criiptoToken: CriiptoUserClaims): Promise<{ u
           oldName: 'Pending BankID Login',
           newName: existingDoctor.name
         });
-
-        // Update Stream Chat profile with new name
-        await streamChatApi.createStreamUser(existingDoctor);
       }
 
       // Update last login timestamp
@@ -201,9 +197,6 @@ export async function findUserOnly(criiptoToken: CriiptoUserClaims): Promise<{ u
           oldName: 'Pending BankID Login',
           newName: existingPatient.name
         });
-
-        // Update Stream Chat profile with new name
-        await streamChatApi.createStreamUser(existingPatient);
       }
 
       // Update last login timestamp
@@ -261,9 +254,6 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
           oldName: 'Pending BankID Login',
           newName: existingDoctor.name
         });
-
-        // Update Stream Chat profile with new name
-        await streamChatApi.createStreamUser(existingDoctor);
       }
 
       // Update last login timestamp
@@ -301,9 +291,6 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
           oldName: 'Pending BankID Login',
           newName: existingPatient.name
         });
-
-        // Update Stream Chat profile with new name
-        await streamChatApi.createStreamUser(existingPatient);
       }
 
       // Update last login timestamp

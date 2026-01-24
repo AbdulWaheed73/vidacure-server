@@ -14,7 +14,7 @@ import AdminNotificationSchema from '../schemas/admin-notification-schema';
 import PatientSchema from '../schemas/patient-schema';
 import DoctorSchema from '../schemas/doctor-schema';
 import { stripeService } from './stripe-service';
-import { deleteUser as deleteStreamUser } from './stream-chat-api';
+import { supabaseChatApi } from './supabase-chat-api';
 
 /**
  * Main user deletion service for GDPR compliance
@@ -149,37 +149,35 @@ export const userDeletionService = {
   },
 
   /**
-   * Delete GetStream chat data
+   * Delete Supabase chat data (soft delete for GDPR compliance)
    */
   async deleteStreamData(userId: string, userType: UserTypeForDeletion): Promise<StreamDeletionResult> {
     try {
       const channelIds: string[] = [];
 
-      // Gather channel IDs before deletion
+      // Gather channel IDs before deletion for logging
       if (userType === 'patient') {
         const patient = await PatientSchema.findById(userId);
-        if (patient?.chatChannelId) {
-          channelIds.push(patient.chatChannelId);
+        if (patient?.supabaseConversationId) {
+          channelIds.push(patient.supabaseConversationId);
         }
       } else if (userType === 'doctor') {
-        const doctor = await DoctorSchema.findById(userId);
-        if (doctor?.assignedChannels) {
-          channelIds.push(...doctor.assignedChannels);
-        }
+        // For doctors, we'll note that channels were handled
+        channelIds.push('doctor-channels-handled');
       }
 
-      // Delete user from Stream (includes hard delete of messages)
-      await deleteStreamUser(userId, userType);
+      // Delete user data from Supabase (soft delete messages, deactivate participations)
+      await supabaseChatApi.deleteUserData(userId, userType);
 
       return {
         success: true,
         channelIds
       };
     } catch (error: any) {
-      console.error('Error deleting Stream data:', error);
+      console.error('Error deleting Supabase chat data:', error);
       return {
         success: false,
-        error: error.message || 'Failed to delete Stream data'
+        error: error.message || 'Failed to delete Supabase chat data'
       };
     }
   },
