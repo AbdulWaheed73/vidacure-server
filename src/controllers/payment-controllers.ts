@@ -6,9 +6,7 @@ import { assignDoctorRoundRobin } from "../services/doctor-assignment-service";
 
 // Helper to get frontend URL without trailing slash
 const getFrontendUrl = (): string => {
-  const url = process.env.NODE_ENV === "production"
-    ? process.env.PROD_FRONTEND_URL
-    : process.env.DEV_FRONTEND_URL;
+  const url = process.env.FRONTEND_URL;
   return url?.replace(/\/+$/, '') || '';
 };
 

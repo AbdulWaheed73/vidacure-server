@@ -4,22 +4,19 @@ export const validateRequiredEnvVars = () => {
     'MONGODB_URI',
     'JWT_SECRET',
     'SSN_HASH_SECRET',
-    'STRIPE_SECRET_KEY',
-    'STRIPE_WEBHOOK_SECRET',
-    'STRIPE_PRICE_LIFESTYLE',
-    'STRIPE_PRICE_MEDICAL',
     'CRIIPTO_DOMAIN',
     'CRIIPTO_CLIENT_SECRET',
+    'CRIIPTO_CLIENT_ID_WEB',
+    'FRONTEND_URL',
+    'SERVER_URL',
+    'SUPABASE_URL',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_JWT_SECRET',
   ];
 
-  const environmentSpecificVars = process.env.NODE_ENV === 'production'
-    ? ['PROD_FRONTEND_URL', 'PROD_REDIRECT_URI']
-    : ['DEV_FRONTEND_URL', 'DEV_REDIRECT_URI'];
-
-  const allRequiredVars = [...requiredEnvVars, ...environmentSpecificVars];
   const missingVars: string[] = [];
 
-  allRequiredVars.forEach((varName) => {
+  requiredEnvVars.forEach((varName) => {
     if (!process.env[varName]) {
       missingVars.push(varName);
     }
@@ -38,10 +35,15 @@ export const validateRequiredEnvVars = () => {
   console.log('✅ All required environment variables are set');
 };
 
-// Validate Stripe price IDs format
+// Validate Stripe price IDs format (optional - Stripe is deprecated in favor of Chargebee)
 export const validateStripePriceIds = () => {
   const lifestylePrice = process.env.STRIPE_PRICE_LIFESTYLE;
   const medicalPrice = process.env.STRIPE_PRICE_MEDICAL;
+
+  if (!lifestylePrice && !medicalPrice) {
+    console.log('ℹ️  Stripe price IDs not configured (optional - using Chargebee)');
+    return;
+  }
 
   const priceIdRegex = /^price_[a-zA-Z0-9]+$/;
 
@@ -58,21 +60,20 @@ export const validateStripePriceIds = () => {
 
 // Validate URLs
 export const validateUrls = () => {
-  const isProduction = process.env.NODE_ENV === 'production';
-  const frontendUrl = isProduction ? process.env.PROD_FRONTEND_URL : process.env.DEV_FRONTEND_URL;
-  const redirectUri = isProduction ? process.env.PROD_REDIRECT_URI : process.env.DEV_REDIRECT_URI;
+  const frontendUrl = process.env.FRONTEND_URL;
+  const serverUrl = process.env.SERVER_URL;
 
   try {
     if (frontendUrl) {
       new URL(frontendUrl);
     }
-    if (redirectUri) {
-      new URL(redirectUri);
+    if (serverUrl) {
+      new URL(serverUrl);
     }
   } catch {
     console.warn('⚠️  Invalid URL format detected in environment variables');
     console.warn(`   Frontend URL: ${frontendUrl}`);
-    console.warn(`   Redirect URI: ${redirectUri}`);
+    console.warn(`   Server URL: ${serverUrl}`);
   }
 };
 

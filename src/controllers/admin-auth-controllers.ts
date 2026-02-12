@@ -17,9 +17,7 @@ import { browserDetails } from "../middleware/auth-middleware";
 
 // Helper to get frontend URL without trailing slash
 const getFrontendUrl = (): string => {
-  const url = process.env.NODE_ENV === "production"
-    ? process.env.PROD_FRONTEND_URL
-    : process.env.DEV_FRONTEND_URL;
+  const url = process.env.FRONTEND_URL;
   return url?.replace(/\/+$/, '') || '';
 };
 
@@ -35,10 +33,7 @@ function getAdminRedirectUri(req: Request): string {
   }
 
   // Fallback to environment variables if request headers aren't available
-  const isProduction = process.env.NODE_ENV === "production";
-  const baseUrl = isProduction
-    ? process.env.PROD_SERVER_URL || 'http://13.62.121.217:3000'
-    : process.env.DEV_SERVER_URL || 'http://localhost:3000';
+  const baseUrl = process.env.SERVER_URL || 'http://localhost:3000';
 
   return `${baseUrl}/api/admin/auth/callback`;
 }
