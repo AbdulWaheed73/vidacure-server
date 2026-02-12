@@ -15,6 +15,7 @@ import adminRoutes from "./routes/admin-routes";
 import adminAuthRoutes from "./routes/admin-auth-routes";
 import prescriptionRoutes from "./routes/prescription-routes";
 import userDeletionRoutes from "./routes/user-deletion-routes";
+import consentRoutes from "./routes/consent-routes";
 import adminNotificationRoutes from "./routes/admin-notification-routes";
 import pendingBookingRoutes from "./routes/pending-booking-routes";
 import { requireAuth, requireCSRF, requireRole, requireActiveSubscription } from "./middleware/auth-middleware";
@@ -92,6 +93,11 @@ initializeAuth()
     );
   });
 
+// Health check endpoint for Railway
+app.get("/health", (_req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
 // Parent Routes
 app.use("/api", authRoutes);
 app.use("/api/payment", paymentRoutes);
@@ -115,6 +121,9 @@ app.use("/api/admin", adminRoutes);
 
 // User deletion routes - self-deletion and admin deletion
 app.use("/api/users", userDeletionRoutes);
+
+// Consent management routes (GDPR)
+app.use("/api/consent", consentRoutes);
 
 // Admin notification routes
 app.use("/api/admin/notifications", adminNotificationRoutes);

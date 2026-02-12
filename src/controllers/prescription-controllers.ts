@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { Types } from "mongoose";
 import PatientSchema from "../schemas/patient-schema";
 import { AuthenticatedRequest } from "../types/generic-types";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
@@ -148,6 +149,18 @@ export const updatePrescriptionRequestStatus = async (req: AuthenticatedRequest,
     if (usageInstructions) request.usageInstructions = usageInstructions;
     if (dateIssued) request.dateIssued = new Date(dateIssued);
     if (validTill) request.validTill = new Date(validTill);
+
+    // When approved, also set the top-level prescription field
+    if (status === PrescriptionRequestStatus.APPROVED) {
+      patient.prescription = {
+        doctor: new Types.ObjectId(userId),
+        medicationDetails: request.medicationName || '',
+        validFrom: request.dateIssued || new Date(),
+        validTo: request.validTill || new Date(),
+        status: 'active',
+        updatedAt: new Date(),
+      };
+    }
 
     await patient.save();
 

@@ -5,11 +5,25 @@ import {
   getDeletions,
   getDeletionById
 } from '../controllers/user-deletion-controller';
+import { exportMyData } from '../controllers/data-export-controller';
 import { requireAuth, requireCSRF } from '../middleware/auth-middleware';
 import { requireAdminAuth } from '../middleware/admin-auth-middleware';
 import { auditMiddleware } from '../middleware/audit-middleware';
 
 const router = express.Router();
+
+/**
+ * Data export endpoint (GDPR Article 20 - Data Portability)
+ * GET /api/users/me/data-export
+ * Authenticated patients can download all their personal data
+ */
+router.get(
+  '/me/data-export',
+  requireAuth,
+  auditMiddleware,
+  requireCSRF,
+  exportMyData
+);
 
 /**
  * Self-deletion endpoint
