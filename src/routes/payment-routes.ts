@@ -8,6 +8,7 @@ import {
   getSubscriptionStatus,
   cancelSubscription,
   createPortalSession,
+  getInvoiceHistory,
   handleSuccessfulPayment,
   handleFailedPayment,
   handleSubscriptionUpdate,
@@ -32,6 +33,8 @@ router.get("/subscription/status", requireAuth, auditMiddleware, requireCSRF, re
 router.post("/subscription/cancel", paymentRateLimiter, requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), cancelSubscription);
 
 router.post("/create-portal-session", paymentRateLimiter, requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), createPortalSession);
+
+router.get("/invoices", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), getInvoiceHistory);
 
 router.post("/webhook", express.raw({ type: 'application/json' }), async (req: express.Request, res: express.Response) => {
   const signature = req.headers['stripe-signature'] as string;

@@ -5,12 +5,13 @@ import { DoctorT } from "../types/doctor-type";
 const DoctorSchema: Schema = new Schema(
   {
     // Common authentication fields
-    ssnHash: { 
-      type: String, 
-      required: true, 
+    ssnHash: {
+      type: String,
+      required: true,
       unique: true,
       index: true
     },
+    encryptedSsn: { type: String, required: false },
     name: { type: String, required: true },
     given_name: { type: String, required: true },
     family_name: { type: String, required: true },

@@ -33,6 +33,20 @@ const logCriticalWebhookError = (
   // Example: Sentry.captureException(error, { contexts: { webhook: errorData } });
 };
 
+// Helper to extract period dates from a Stripe subscription.
+// In API version 2025-08-27.basil, current_period_start/end moved
+// from the subscription root to subscription.items.data[].
+const getSubscriptionPeriod = (subscription: Stripe.Subscription) => {
+  const item = subscription.items?.data?.[0] as any;
+  const start: number | undefined =
+    item?.current_period_start ??
+    (subscription as any).current_period_start;
+  const end: number | undefined =
+    item?.current_period_end ??
+    (subscription as any).current_period_end;
+  return { start, end };
+};
+
 // Helper function to validate plan type
 const isValidPlanType = (
   planType: any
@@ -332,17 +346,18 @@ export const getSubscriptionStatus = async (
         const subscription = await stripeService.retrieveSubscription(
           patient.subscription.stripeSubscriptionId
         );
+        const { start, end } = getSubscriptionPeriod(subscription);
         subscriptionData = {
           id: subscription.id,
           status: subscription.status,
           planType: patient.subscription?.planType,
-          currentPeriodStart: new Date(
-            (subscription as any).current_period_start * 1000
-          ),
-          currentPeriodEnd: new Date(
-            (subscription as any).current_period_end * 1000
-          ),
-          cancelAtPeriodEnd: (subscription as any).cancel_at_period_end,
+          currentPeriodStart: start
+            ? new Date(start * 1000)
+            : patient.subscription?.currentPeriodStart || new Date(),
+          currentPeriodEnd: end
+            ? new Date(end * 1000)
+            : patient.subscription?.currentPeriodEnd || new Date(),
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
         };
       } catch (error) {
         console.error("Error fetching Stripe subscription:", error);
@@ -383,14 +398,14 @@ export const cancelSubscription = async (
 
     // Update nested subscription object
     if (patient.subscription) {
+      const { end } = getSubscriptionPeriod(subscription);
       patient.subscription.status = "canceled";
       patient.subscription.canceledAt = new Date();
-      patient.subscription.cancelAtPeriodEnd = (
-        subscription as any
-      ).cancel_at_period_end;
-      patient.subscription.currentPeriodEnd = new Date(
-        (subscription as any).current_period_end * 1000
-      );
+      patient.subscription.cancelAtPeriodEnd =
+        subscription.cancel_at_period_end;
+      if (end) {
+        patient.subscription.currentPeriodEnd = new Date(end * 1000);
+      }
     }
     await patient.save();
 
@@ -406,6 +421,44 @@ export const cancelSubscription = async (
     });
   } catch (error: any) {
     console.error("Error canceling subscription:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getInvoiceHistory = async (
+  req: express.Request,
+  res: express.Response
+) => {
+  try {
+    const userId = (req as any).user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "User not authenticated" });
+    }
+
+    const patient = await PatientSchema.findById(userId);
+    if (!patient || !patient.subscription?.stripeCustomerId) {
+      return res.json({ invoices: [] });
+    }
+
+    const invoices = await stripeService.getCustomerInvoices(
+      patient.subscription.stripeCustomerId
+    );
+
+    const mappedInvoices = invoices.map((invoice) => ({
+      id: invoice.id,
+      date: new Date(invoice.created * 1000).toISOString(),
+      amount: invoice.amount_paid,
+      currency: invoice.currency,
+      status: invoice.status,
+      planType: invoice.lines?.data?.[0]?.metadata?.planType || patient.subscription?.planType || null,
+      invoicePdf: invoice.invoice_pdf || null,
+      receiptUrl: invoice.hosted_invoice_url || null,
+    }));
+
+    res.json({ invoices: mappedInvoices });
+  } catch (error: any) {
+    console.error("Error fetching invoice history:", error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -475,8 +528,7 @@ export const handleSuccessfulPayment = async (
     const subscription =
       await stripeService.retrieveSubscription(subscriptionId);
 
-    const startTimestamp = (subscription as any).current_period_start;
-    const endTimestamp = (subscription as any).current_period_end;
+    const { start: startTimestamp, end: endTimestamp } = getSubscriptionPeriod(subscription);
 
     // Update patient with nested subscription object
     patient.subscription = {
@@ -576,8 +628,7 @@ export const handleSubscriptionUpdate = async (
       return;
     }
 
-    const updateStartTimestamp = (subscription as any).current_period_start;
-    const updateEndTimestamp = (subscription as any).current_period_end;
+    const { start: updateStartTimestamp, end: updateEndTimestamp } = getSubscriptionPeriod(subscription);
 
     // Update nested subscription object
     if (patient.subscription) {
@@ -713,8 +764,7 @@ export const handleSetupIntentSucceeded = async (
     );
 
     // Update patient record with nested subscription object
-    const startTimestamp = (subscription as any).current_period_start;
-    const endTimestamp = (subscription as any).current_period_end;
+    const { start: startTimestamp, end: endTimestamp } = getSubscriptionPeriod(subscription);
 
     patient.subscription = {
       stripeCustomerId: setupIntent.customer as string,
@@ -864,8 +914,7 @@ export const handlePaymentIntentSucceeded = async (
     );
 
     // Update patient record with nested subscription object
-    const startTimestamp = (subscription as any).current_period_start;
-    const endTimestamp = (subscription as any).current_period_end;
+    const { start: startTimestamp, end: endTimestamp } = getSubscriptionPeriod(subscription);
 
     patient.subscription = {
       stripeCustomerId: paymentIntent.customer as string,

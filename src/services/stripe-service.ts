@@ -225,6 +225,15 @@ export const stripeService = {
     }
   },
 
+  getCustomerInvoices: async (customerId: string, limit: number = 24) => {
+    const invoices = await stripe.invoices.list({
+      customer: customerId,
+      limit,
+      status: 'paid',
+    });
+    return invoices.data;
+  },
+
   getCustomerPaymentMethods: async (customerId: string) => {
     const paymentMethods = await stripe.paymentMethods.list({
       customer: customerId,

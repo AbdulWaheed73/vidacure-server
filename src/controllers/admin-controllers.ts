@@ -4,6 +4,7 @@ import DoctorSchema from "../schemas/doctor-schema";
 import { supabaseChatApi } from "../services/supabase-chat-api";
 import stripeService from "../services/stripe-service";
 import { hashSSN, isValidSwedishSSN } from "../services/auth-service";
+import { getCalendlyUserByEmail } from "../services/calendly-service";
 
 /**
  * Get dashboard statistics
@@ -375,6 +376,17 @@ export const convertPatientToDoctor = async (req: express.Request, res: express.
 
     const savedDoctor = await newDoctor.save();
 
+    // Eagerly resolve Calendly user URI by email
+    try {
+      const calendlyUserUri = await getCalendlyUserByEmail(email);
+      if (calendlyUserUri) {
+        savedDoctor.calendlyUserUri = calendlyUserUri;
+        await savedDoctor.save();
+      }
+    } catch (err) {
+      console.warn('Could not resolve Calendly user for converted doctor:', err);
+    }
+
     // If patient was assigned to a doctor, remove from that doctor's patients array
     if (patient.doctor) {
       await DoctorSchema.findByIdAndUpdate(
@@ -408,7 +420,7 @@ export const convertPatientToDoctor = async (req: express.Request, res: express.
  */
 export const addDoctor = async (req: express.Request, res: express.Response) => {
   try {
-    const { ssn, email } = req.body;
+    const { ssn, email, eventTypes } = req.body;
 
     // Validate required fields
     if (!ssn || !email) {
@@ -453,16 +465,31 @@ export const addDoctor = async (req: express.Request, res: express.Response) => 
       role: 'doctor',
       patients: [],
       assignedChannels: [],
+      ...(eventTypes && { eventTypes }),
     });
 
     const savedDoctor = await newDoctor.save();
 
+    // Eagerly resolve Calendly user URI by email
+    let calendlyLinked = false;
+    try {
+      const calendlyUserUri = await getCalendlyUserByEmail(email);
+      if (calendlyUserUri) {
+        savedDoctor.calendlyUserUri = calendlyUserUri;
+        await savedDoctor.save();
+        calendlyLinked = true;
+      }
+    } catch (err) {
+      console.warn('Could not resolve Calendly user for new doctor:', err);
+    }
+
     res.status(201).json({
-      message: 'Doctor created successfully. Name will be populated from BankID on first login.',
+      message: `Doctor created successfully.${calendlyLinked ? ' Calendly account linked.' : ' No Calendly account found for this email.'} Name will be populated from BankID on first login.`,
       doctor: {
         _id: savedDoctor._id,
         email: savedDoctor.email,
-        createdAt: savedDoctor.createdAt
+        createdAt: savedDoctor.createdAt,
+        calendlyLinked
       }
     });
 

@@ -18,6 +18,13 @@ const getSupabaseClient = (): SupabaseClient => {
   });
 };
 
+/** Safely convert a value to ISO string, returning undefined for invalid dates */
+const safeDate = (value: unknown): string | undefined => {
+  if (!value) return undefined;
+  const date = new Date(value as string | number | Date);
+  return isNaN(date.getTime()) ? undefined : date.toISOString();
+};
+
 export const dataExportService = {
   /**
    * Export all patient data for GDPR data portability (Article 20)
@@ -48,14 +55,14 @@ export const dataExportService = {
         givenName: patient.given_name,
         familyName: patient.family_name,
         email: patient.email || '',
-        dateOfBirth: patient.dateOfBirth ? new Date(patient.dateOfBirth).toISOString() : undefined,
+        dateOfBirth: safeDate(patient.dateOfBirth),
         gender: patient.gender,
         height: patient.height,
         bmi: patient.bmi,
       },
       weightHistory: (patient.weightHistory || []).map(entry => ({
         weight: entry.weight,
-        date: new Date(entry.date).toISOString(),
+        date: safeDate(entry.date) || new Date().toISOString(),
         sideEffects: entry.sideEffects,
         notes: entry.notes,
       })),
@@ -66,10 +73,10 @@ export const dataExportService = {
       prescription: patient.prescription
         ? {
             medicationDetails: patient.prescription.medicationDetails,
-            validFrom: new Date(patient.prescription.validFrom).toISOString(),
-            validTo: new Date(patient.prescription.validTo).toISOString(),
+            validFrom: safeDate(patient.prescription.validFrom) || '',
+            validTo: safeDate(patient.prescription.validTo) || '',
             status: patient.prescription.status,
-            updatedAt: new Date(patient.prescription.updatedAt).toISOString(),
+            updatedAt: safeDate(patient.prescription.updatedAt) || '',
           }
         : null,
       prescriptionRequests: (patient.prescriptionRequests || []).map(req => ({
@@ -80,34 +87,28 @@ export const dataExportService = {
         medicationName: req.medicationName,
         dosage: req.dosage,
         usageInstructions: req.usageInstructions,
-        dateIssued: req.dateIssued ? new Date(req.dateIssued).toISOString() : undefined,
-        validTill: req.validTill ? new Date(req.validTill).toISOString() : undefined,
-        createdAt: new Date(req.createdAt).toISOString(),
-        updatedAt: new Date(req.updatedAt).toISOString(),
+        dateIssued: safeDate(req.dateIssued),
+        validTill: safeDate(req.validTill),
+        createdAt: safeDate(req.createdAt) || '',
+        updatedAt: safeDate(req.updatedAt) || '',
       })),
       appointments: (patient.calendly?.meetings || []).map(meeting => ({
-        scheduledTime: new Date(meeting.scheduledTime).toISOString(),
+        scheduledTime: safeDate(meeting.scheduledTime) || '',
         status: meeting.status,
-        completedAt: meeting.completedAt ? new Date(meeting.completedAt).toISOString() : undefined,
+        completedAt: safeDate(meeting.completedAt),
         source: meeting.source,
-        createdAt: new Date(meeting.createdAt).toISOString(),
+        createdAt: safeDate(meeting.createdAt) || '',
       })),
       subscription: patient.subscription
         ? {
             status: patient.subscription.status,
             planType: patient.subscription.planType,
-            currentPeriodStart: new Date(patient.subscription.currentPeriodStart).toISOString(),
-            currentPeriodEnd: new Date(patient.subscription.currentPeriodEnd).toISOString(),
+            currentPeriodStart: safeDate(patient.subscription.currentPeriodStart) || '',
+            currentPeriodEnd: safeDate(patient.subscription.currentPeriodEnd) || '',
             cancelAtPeriodEnd: patient.subscription.cancelAtPeriodEnd,
-            canceledAt: patient.subscription.canceledAt
-              ? new Date(patient.subscription.canceledAt).toISOString()
-              : undefined,
-            trialStart: patient.subscription.trialStart
-              ? new Date(patient.subscription.trialStart).toISOString()
-              : undefined,
-            trialEnd: patient.subscription.trialEnd
-              ? new Date(patient.subscription.trialEnd).toISOString()
-              : undefined,
+            canceledAt: safeDate(patient.subscription.canceledAt),
+            trialStart: safeDate(patient.subscription.trialStart),
+            trialEnd: safeDate(patient.subscription.trialEnd),
           }
         : null,
       chatMessages,

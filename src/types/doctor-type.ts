@@ -4,6 +4,7 @@ export type DoctorT = {
   _id?: Types.ObjectId;
   // Common authentication fields
   ssnHash: string;
+  encryptedSsn?: string;
   name: string;
   given_name: string;
   family_name: string;

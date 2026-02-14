@@ -15,6 +15,7 @@ const clientSecret: string = process.env.CRIIPTO_CLIENT_SECRET as string;
 const redirectUri: string = process.env.REDIRECT_URI as string;
 const JWT_SECRET: string = process.env.JWT_SECRET as string;
 const SSN_HASH_SECRET: string = process.env.SSN_HASH_SECRET as string;
+const SSN_ENCRYPTION_KEY: string = process.env.SSN_ENCRYPTION_KEY as string;
 const TTL: number = Number(process.env.TTL); // Default to 30 minutes in milliseconds
 
 // Initialize configuration manager
@@ -34,6 +35,28 @@ export function hashSSN(ssn: string): string {
   return crypto.createHmac('sha256', SSN_HASH_SECRET)
     .update(ssn)
     .digest('hex');
+}
+
+export function encryptSSN(ssn: string): string {
+  const key = Buffer.from(SSN_ENCRYPTION_KEY, 'hex');
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  let encrypted = cipher.update(ssn, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag().toString('hex');
+  return `${iv.toString('hex')}:${authTag}:${encrypted}`;
+}
+
+export function decryptSSN(encrypted: string): string {
+  const [ivHex, authTagHex, ciphertext] = encrypted.split(':');
+  const key = Buffer.from(SSN_ENCRYPTION_KEY, 'hex');
+  const iv = Buffer.from(ivHex, 'hex');
+  const authTag = Buffer.from(authTagHex, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+  let decrypted = decipher.update(ciphertext, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
 }
 
 export function isValidSwedishSSN(ssn: string): boolean {
@@ -153,6 +176,11 @@ export async function findUserOnly(criiptoToken: CriiptoUserClaims): Promise<{ u
         });
       }
 
+      // Backfill encrypted SSN if missing
+      if (!existingDoctor.encryptedSsn) {
+        existingDoctor.encryptedSsn = encryptSSN(ssn);
+      }
+
       // Update last login timestamp
       existingDoctor.lastLogin = new Date();
       await existingDoctor.save();
@@ -197,6 +225,11 @@ export async function findUserOnly(criiptoToken: CriiptoUserClaims): Promise<{ u
           oldName: 'Pending BankID Login',
           newName: existingPatient.name
         });
+      }
+
+      // Backfill encrypted SSN if missing
+      if (!existingPatient.encryptedSsn) {
+        existingPatient.encryptedSsn = encryptSSN(ssn);
       }
 
       // Update last login timestamp
@@ -256,6 +289,11 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
         });
       }
 
+      // Backfill encrypted SSN if missing
+      if (!existingDoctor.encryptedSsn) {
+        existingDoctor.encryptedSsn = encryptSSN(ssn);
+      }
+
       // Update last login timestamp
       existingDoctor.lastLogin = new Date();
       await existingDoctor.save();
@@ -293,6 +331,11 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
         });
       }
 
+      // Backfill encrypted SSN if missing
+      if (!existingPatient.encryptedSsn) {
+        existingPatient.encryptedSsn = encryptSSN(ssn);
+      }
+
       // Update last login timestamp
       existingPatient.lastLogin = new Date();
       await existingPatient.save();
@@ -310,6 +353,7 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
     // User doesn't exist, create new patient (default role)
     const newPatient = new Patient({
       ssnHash,
+      encryptedSsn: encryptSSN(ssn),
       name: name || `${given_name} ${family_name}`.trim() || 'Unknown User',
       given_name: given_name || '',
       family_name: family_name || '',
