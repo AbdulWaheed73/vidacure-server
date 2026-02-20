@@ -77,6 +77,35 @@ export const validateUrls = () => {
   }
 };
 
+// Validate Giddir configuration (optional - warn but don't fail)
+export const validateGiddirConfig = () => {
+  const giddirVars = [
+    'GIDDIR_BASE_URL',
+    'GIDDIR_USERNAME',
+    'GIDDIR_PASSWORD',
+    'GIDDIR_APP_ID',
+    'GIDDIR_PRACTITIONER_EMAIL',
+  ];
+
+  const missingVars = giddirVars.filter((v) => !process.env[v]);
+
+  if (missingVars.length === giddirVars.length) {
+    console.log('ℹ️  Giddir lab testing not configured (optional)');
+    return;
+  }
+
+  if (missingVars.length > 0) {
+    console.warn('⚠️  Giddir partially configured. Missing:');
+    missingVars.forEach((v) => console.warn(`   - ${v}`));
+  } else {
+    console.log('✅ Giddir lab testing configuration found');
+  }
+
+  if (!process.env.GIDDIR_WEBHOOK_API_KEY) {
+    console.warn('⚠️  GIDDIR_WEBHOOK_API_KEY not set — webhook x-api-key verification disabled');
+  }
+};
+
 // Run all validations
 export const validateEnvironment = () => {
   console.log('\n🔍 Validating environment configuration...\n');
@@ -85,6 +114,7 @@ export const validateEnvironment = () => {
     validateRequiredEnvVars();
     validateStripePriceIds();
     validateUrls();
+    validateGiddirConfig();
     console.log('✅ Environment validation complete\n');
   } catch (error) {
     console.error('❌ Environment validation failed\n');

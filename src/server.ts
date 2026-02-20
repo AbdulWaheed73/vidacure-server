@@ -14,6 +14,7 @@ import calendlyRoutes from "./routes/calendly-routes";
 import adminRoutes from "./routes/admin-routes";
 import adminAuthRoutes from "./routes/admin-auth-routes";
 import prescriptionRoutes from "./routes/prescription-routes";
+import labTestRoutes from "./routes/lab-test-routes";
 import userDeletionRoutes from "./routes/user-deletion-routes";
 import consentRoutes from "./routes/consent-routes";
 import adminNotificationRoutes from "./routes/admin-notification-routes";
@@ -75,6 +76,9 @@ app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 // Calendly webhook needs raw body for signature verification
 app.use('/api/calendly/webhook', express.raw({ type: 'application/json' }));
 
+// Giddir lab test webhook needs raw body
+app.use('/api/lab-tests/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -110,6 +114,8 @@ app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireR
 app.use("/api/chat", requireAuth, auditMiddleware, requireActiveSubscription, chatRoutes);
 // Supabase Chat routes - new implementation
 app.use("/api/supabase-chat", supabaseChatRoutes);
+// Lab test routes - webhook is public (verified by secret), other routes require patient auth
+app.use("/api/lab-tests", labTestRoutes);
 // Calendly routes - the webhook handler inside uses express.json() and bypasses auth via route-level check
 app.use("/api/calendly", calendlyRoutes);
 
