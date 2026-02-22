@@ -8,6 +8,7 @@ import {
   reassignDoctor,
   sendSystemMessage,
   createConversation,
+  getUnreadCounts,
 } from '../controllers/supabase-chat-controllers';
 
 const router = Router();
@@ -23,6 +24,9 @@ router.post('/token', requireAuth, getSupabaseChatToken);
 
 // Patient routes - require active subscription for chat access
 router.get('/conversation', requireAuth, requireRole('patient'), requireActiveSubscription, getPatientConversation);
+
+// Unread counts - any authenticated user
+router.get('/unread-counts', requireAuth, getUnreadCounts);
 
 // Doctor routes
 router.get('/conversations', requireAuth, requireRole('doctor'), getDoctorConversations);

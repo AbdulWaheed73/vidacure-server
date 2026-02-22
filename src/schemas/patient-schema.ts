@@ -38,6 +38,7 @@ const PatientSchema: Schema = new Schema(
 
     height: { type: Number, required: false },
     bmi: { type: Number },
+    goalWeight: { type: Number },
 
     doctor: { type: Types.ObjectId, ref: "Doctor" },
 

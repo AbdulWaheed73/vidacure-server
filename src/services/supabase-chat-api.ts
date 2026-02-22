@@ -513,6 +513,30 @@ export const supabaseChatApi = {
   },
 
   /**
+   * Get all unread counts for a user across all conversations
+   */
+  async getAllUnreadCounts(userId: string): Promise<{ [conversationId: string]: number }> {
+    const supabase = getSupabaseClient();
+
+    const { data, error } = await supabase.rpc('get_all_unread_counts', {
+      p_user_id: userId,
+    });
+
+    if (error) {
+      console.error('Failed to get unread counts:', error);
+      return {};
+    }
+
+    const counts: { [conversationId: string]: number } = {};
+    if (data) {
+      data.forEach((item: { conversation_id: string; unread_count: number }) => {
+        counts[item.conversation_id] = item.unread_count;
+      });
+    }
+    return counts;
+  },
+
+  /**
    * Check if user is participant in conversation
    */
   async isUserParticipant(conversationId: string, userId: string): Promise<boolean> {
@@ -542,5 +566,6 @@ export const {
   sendSystemMessage,
   deleteUserData,
   getConversationById,
+  getAllUnreadCounts,
   isUserParticipant,
 } = supabaseChatApi;

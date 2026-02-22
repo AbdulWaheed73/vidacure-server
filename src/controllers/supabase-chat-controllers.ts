@@ -88,6 +88,7 @@ export async function getPatientConversation(req: AuthenticatedRequest, res: Res
     }
 
     const doctorId = patient.doctor._id.toString();
+    const doctorName = (patient.doctor as any).name || 'Doctor';
 
     // Get or create conversation
     const result = await supabaseChatApi.getOrCreatePatientConversation(userId, doctorId);
@@ -101,6 +102,7 @@ export async function getPatientConversation(req: AuthenticatedRequest, res: Res
       created: result.created,
       conversation: conversationData?.conversation,
       participants: conversationData?.participants,
+      doctorName,
     });
   } catch (error) {
     console.error('Error getting patient conversation:', error);
@@ -351,5 +353,26 @@ export async function createConversation(req: AuthenticatedRequest, res: Respons
   } catch (error) {
     console.error('Error creating conversation:', error);
     res.status(500).json({ error: 'Failed to create conversation' });
+  }
+}
+
+/**
+ * Get unread message counts for current user
+ * GET /api/supabase-chat/unread-counts
+ */
+export async function getUnreadCounts(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+
+    const counts = await supabaseChatApi.getAllUnreadCounts(userId);
+    res.json({ counts });
+  } catch (error) {
+    console.error('Error getting unread counts:', error);
+    res.status(500).json({ error: 'Failed to get unread counts' });
   }
 }

@@ -6,6 +6,7 @@ import {
   getDeletionById
 } from '../controllers/user-deletion-controller';
 import { exportMyData } from '../controllers/data-export-controller';
+import { getMySSN } from '../controllers/ssn-controller';
 import { requireAuth, requireCSRF } from '../middleware/auth-middleware';
 import { requireAdminAuth } from '../middleware/admin-auth-middleware';
 import { auditMiddleware } from '../middleware/audit-middleware';
@@ -23,6 +24,19 @@ router.get(
   auditMiddleware,
   requireCSRF,
   exportMyData
+);
+
+/**
+ * SSN reveal endpoint
+ * GET /api/users/me/ssn
+ * Authenticated users can view their own decrypted SSN
+ */
+router.get(
+  '/me/ssn',
+  requireAuth,
+  auditMiddleware,
+  requireCSRF,
+  getMySSN
 );
 
 /**

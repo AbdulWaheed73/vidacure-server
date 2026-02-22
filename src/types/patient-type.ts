@@ -25,6 +25,7 @@ export type PatientT = {
 
   height: number;
   bmi?: number;
+  goalWeight?: number;
 
   doctor?: Types.ObjectId; // ref: Doctor
 

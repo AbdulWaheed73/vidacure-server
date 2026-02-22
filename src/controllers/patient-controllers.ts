@@ -328,6 +328,7 @@ export const getProfile = async (req: AuthenticatedRequest, res: Response): Prom
         gender: patient.gender,
         height: patient.height,
         bmi: patient.bmi,
+        goalWeight: patient.goalWeight,
         role: patient.role,
         hasCompletedOnboarding: patient.hasCompletedOnboarding,
         createdAt: patient.createdAt,
@@ -344,7 +345,7 @@ export const getProfile = async (req: AuthenticatedRequest, res: Response): Prom
 // Update patient profile (e.g., email, height)
 export const updateProfile = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { email, height } = req.body;
+    const { email, height, goalWeight } = req.body;
     const userId = req.user?.userId;
 // console.log("\n\n\nupdateProfile called with:", req.body);
     if (!userId) {
@@ -381,10 +382,21 @@ export const updateProfile = async (req: AuthenticatedRequest, res: Response): P
       return;
     }
 
+    // Update goal weight if provided
+    if (goalWeight !== undefined) {
+      const goalWeightNum = parseFloat(goalWeight);
+      if (isNaN(goalWeightNum) || goalWeightNum <= 0 || goalWeightNum > 500) {
+        res.status(400).json({ error: "Invalid goal weight value. Must be between 1 and 500 kg" });
+        return;
+      }
+      patient.goalWeight = goalWeightNum;
+    }
+
     await patient.save();
     await auditDatabaseOperation(req, "update_profile_save", "UPDATE", userId, {
       emailUpdated: email !== undefined,
-      heightUpdated: height !== undefined
+      heightUpdated: height !== undefined,
+      goalWeightUpdated: goalWeight !== undefined
     });
 
     res.status(200).json({

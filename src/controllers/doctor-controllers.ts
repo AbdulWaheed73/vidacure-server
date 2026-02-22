@@ -382,6 +382,70 @@ export async function getPatientProfile(
   }
 }
 
+// Get patient questionnaire
+export async function getPatientQuestionnaire(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const doctorId = req.user?.userId;
+    const { patientId } = req.query;
+
+    if (!doctorId) {
+      res.status(401).json({ error: "User not authenticated" });
+      return;
+    }
+
+    if (typeof patientId !== "string" || !Types.ObjectId.isValid(patientId)) {
+      res.status(400).json({ error: "A valid patientId query parameter is required" });
+      return;
+    }
+
+    const patient = await PatientSchema.findOne({
+      _id: patientId,
+      doctor: doctorId
+    })
+      .select("questionnaire")
+      .lean();
+
+    if (!patient) {
+      await auditDatabaseError(
+        req,
+        "get_patient_questionnaire",
+        "READ",
+        new Error("Patient not found or not assigned to doctor"),
+        patientId
+      );
+      res.status(404).json({ error: "Patient not found or not assigned to this doctor" });
+      return;
+    }
+
+    await auditDatabaseOperation(req, "get_patient_questionnaire", "READ", patientId);
+
+    const questionnaire = Array.isArray(patient.questionnaire)
+      ? patient.questionnaire.map((entry) => ({
+          questionId: entry.questionId,
+          answer: entry.answer ?? ""
+        }))
+      : [];
+
+    res.status(200).json({ questionnaire });
+  } catch (error) {
+    console.error("Error fetching patient questionnaire:", error);
+    await auditDatabaseError(
+      req,
+      "get_patient_questionnaire",
+      "READ",
+      error,
+      typeof req.query.patientId === "string" ? req.query.patientId : undefined
+    );
+    res.status(500).json({
+      error: "Internal server error",
+      details: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+}
+
 // Get doctor profile
 export async function getDoctorProfile(
   req: AuthenticatedRequest,
