@@ -19,6 +19,7 @@ import userDeletionRoutes from "./routes/user-deletion-routes";
 import consentRoutes from "./routes/consent-routes";
 import adminNotificationRoutes from "./routes/admin-notification-routes";
 import pendingBookingRoutes from "./routes/pending-booking-routes";
+import providerRoutes from "./routes/provider-routes";
 import { requireAuth, requireCSRF, requireRole, requireActiveSubscription } from "./middleware/auth-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
 import os from 'os';
@@ -108,6 +109,7 @@ app.use("/api/payment", paymentRoutes);
 // Pending booking routes - mixed public and protected endpoints
 app.use("/api/pending-booking", pendingBookingRoutes);
 app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), patientRoutes);
+app.use("/api/providers", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), providerRoutes);
 app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), doctorRoutes);
 app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), requireActiveSubscription, prescriptionRoutes);
 // Chat routes without CSRF for now - will add CSRF to individual routes that need it

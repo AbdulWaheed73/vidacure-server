@@ -7,6 +7,7 @@ import {
   createCheckoutSession,
   getSubscriptionStatus,
   cancelSubscription,
+  changePlan,
   createPortalSession,
   getInvoiceHistory,
   handleSuccessfulPayment,
@@ -16,6 +17,7 @@ import {
   handlePaymentIntentSucceeded,
   handleSetupIntentSucceeded
 } from "../controllers/payment-controllers";
+import { submitCancellationFeedback } from "../controllers/cancellation-feedback-controller";
 import { requireAuth, requireCSRF, requireRole } from "../middleware/auth-middleware";
 import { auditMiddleware } from "../middleware/audit-middleware";
 import { paymentRateLimiter } from "../middleware/rate-limit-middleware";
@@ -31,6 +33,10 @@ router.post("/create-checkout-session", paymentRateLimiter, requireAuth, auditMi
 router.get("/subscription/status", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), getSubscriptionStatus);
 
 router.post("/subscription/cancel", paymentRateLimiter, requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), cancelSubscription);
+
+router.post("/subscription/feedback", requireAuth, requireCSRF, requireRole('patient'), submitCancellationFeedback);
+
+router.post("/subscription/change-plan", paymentRateLimiter, requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), changePlan);
 
 router.post("/create-portal-session", paymentRateLimiter, requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), createPortalSession);
 

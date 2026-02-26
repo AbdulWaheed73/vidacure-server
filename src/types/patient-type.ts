@@ -28,6 +28,29 @@ export type PatientT = {
   goalWeight?: number;
 
   doctor?: Types.ObjectId; // ref: Doctor
+  providers?: Types.ObjectId[]; // refs to Provider
+
+  providerTierOverrides?: {
+    providerId: Types.ObjectId;
+    tier: "free" | "premium";
+    setBy?: string;
+    setAt?: Date;
+  }[];
+
+  providerMeetings?: {
+    providerId: Types.ObjectId;
+    providerName: string;
+    providerType: string;
+    eventUri: string;
+    inviteeUri?: string;
+    scheduledTime: Date;
+    endTime?: Date;
+    status: "scheduled" | "completed" | "canceled";
+    completedAt?: Date;
+    eventType: string;
+    meetingUrl?: string;
+    createdAt: Date;
+  }[];
 
   subscription?: {
     stripeCustomerId: string;

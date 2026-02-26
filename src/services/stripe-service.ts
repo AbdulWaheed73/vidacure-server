@@ -117,7 +117,9 @@ export const stripeService = {
   },
 
   cancelSubscription: async (subscriptionId: string) => {
-    return await stripe.subscriptions.cancel(subscriptionId);
+    return await stripe.subscriptions.update(subscriptionId, {
+      cancel_at_period_end: true,
+    });
   },
 
   updateSubscription: async (subscriptionId: string, params: Stripe.SubscriptionUpdateParams) => {

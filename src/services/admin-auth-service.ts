@@ -1,129 +1,252 @@
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import argon2 from "argon2";
+import { TOTP, NobleCryptoPlugin, ScureBase32Plugin } from "otplib";
+import QRCode from "qrcode";
 import Admin from "../schemas/admin-schema";
 import { AdminT } from "../types/admin-type";
-import { CriiptoUserClaims } from "../types/generic-types";
+
+// Initialize TOTP instance with plugins
+const totpInstance = new TOTP({
+  crypto: new NobleCryptoPlugin(),
+  base32: new ScureBase32Plugin(),
+});
 
 // Environment variables
 const JWT_SECRET: string = process.env.JWT_SECRET as string;
-const SSN_HASH_SECRET: string = process.env.SSN_HASH_SECRET as string;
-const TTL: number = Number(process.env.TTL); // Token TTL
+const TTL: number = Number(process.env.TTL);
+const ENCRYPTION_KEY: string = process.env.ADMIN_2FA_ENCRYPTION_KEY as string;
 
 // Admin-specific JWT payload
 export type AdminJWTPayload = {
   userId: string;
   role: "admin" | "superadmin";
-  isAdmin: true; // Flag to identify admin tokens
+  isAdmin: true;
   iat: number;
   exp: number;
 };
 
-/**
- * Hash SSN for admin lookup
- */
-export function hashSSN(ssn: string): string {
-  return crypto.createHmac('sha256', SSN_HASH_SECRET)
-    .update(ssn)
-    .digest('hex');
+// Pending 2FA JWT payload
+export type PendingJWTPayload = {
+  userId: string;
+  isPending2FA: true;
+  iat: number;
+  exp: number;
+};
+
+// ─── Password Hashing ────────────────────────────────────────
+
+export async function hashPassword(password: string): Promise<string> {
+  return argon2.hash(password, {
+    type: argon2.argon2id,
+    memoryCost: 65536,
+    timeCost: 3,
+    parallelism: 4,
+  });
 }
 
-/**
- * Validate Swedish SSN format
- */
-export function isValidSwedishSSN(ssn: string): boolean {
-  return /^\d{12}$/.test(ssn);
+export async function verifyPassword(
+  hash: string,
+  password: string
+): Promise<boolean> {
+  return argon2.verify(hash, password);
 }
 
-/**
- * Find admin by SSN - ONLY checks Admin collection
- * Does NOT check Patient or Doctor collections
- * Does NOT create new users
- */
-export async function findAdminBySSN(criiptoToken: CriiptoUserClaims): Promise<AdminT | null> {
-  const { ssn, name } = criiptoToken;
+// ─── TOTP Secret Encryption ─────────────────────────────────
 
-  if (!ssn || !isValidSwedishSSN(ssn)) {
-    throw new Error('Invalid or missing SSN from IdP');
+export function encryptTotpSecret(secret: string): string {
+  const key = Buffer.from(ENCRYPTION_KEY, "hex");
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([
+    cipher.update(secret, "utf8"),
+    cipher.final(),
+  ]);
+  const authTag = cipher.getAuthTag();
+  return `${iv.toString("hex")}:${authTag.toString("hex")}:${encrypted.toString("hex")}`;
+}
+
+export function decryptTotpSecret(encrypted: string): string {
+  const [ivHex, authTagHex, ciphertextHex] = encrypted.split(":");
+  const key = Buffer.from(ENCRYPTION_KEY, "hex");
+  const iv = Buffer.from(ivHex, "hex");
+  const authTag = Buffer.from(authTagHex, "hex");
+  const ciphertext = Buffer.from(ciphertextHex, "hex");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(authTag);
+  return decipher.update(ciphertext) + decipher.final("utf8");
+}
+
+// ─── TOTP Generation & Verification ─────────────────────────
+
+export async function generateTotpSecret(email: string): Promise<{
+  secret: string;
+  otpauthUrl: string;
+  qrCodeDataUrl: string;
+}> {
+  const secret = totpInstance.generateSecret();
+  const otpauthUrl = totpInstance.toURI({
+    label: email,
+    issuer: "Vidacure Admin",
+    secret,
+  });
+  const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
+  return { secret, otpauthUrl, qrCodeDataUrl };
+}
+
+export async function verifyTotpCode(
+  encryptedSecret: string,
+  code: string
+): Promise<boolean> {
+  const secret = decryptTotpSecret(encryptedSecret);
+  const result = await totpInstance.verify(code, { secret });
+  return result.valid;
+}
+
+export async function verifyTotpCodeRaw(
+  secret: string,
+  code: string
+): Promise<boolean> {
+  const result = await totpInstance.verify(code, { secret });
+  return result.valid;
+}
+
+// ─── Backup Codes ────────────────────────────────────────────
+
+export async function generateBackupCodes(): Promise<{
+  plain: string[];
+  hashed: string[];
+}> {
+  const plain: string[] = [];
+  const hashed: string[] = [];
+
+  for (let i = 0; i < 8; i++) {
+    const code = crypto.randomBytes(4).toString("hex"); // 8 hex chars
+    plain.push(code);
+    hashed.push(await argon2.hash(code, { type: argon2.argon2id }));
   }
 
-  const ssnHash = hashSSN(ssn);
+  return { plain, hashed };
+}
 
-  try {
-    // ONLY check Admin collection
-    const admin = await Admin.findOne({ ssnHash });
-
-    if (!admin) {
-      console.log("❌ Admin not found for SSN hash:", ssnHash);
-      console.log("🔐 User attempted admin login:", name);
-      return null;
+export async function verifyBackupCode(
+  code: string,
+  hashedCodes: string[]
+): Promise<{ valid: boolean; remainingCodes: string[] }> {
+  for (let i = 0; i < hashedCodes.length; i++) {
+    const match = await argon2.verify(hashedCodes[i], code);
+    if (match) {
+      const remainingCodes = [...hashedCodes];
+      remainingCodes.splice(i, 1);
+      return { valid: true, remainingCodes };
     }
-
-    // Update last login
-    admin.lastLogin = new Date();
-    await admin.save();
-
-    console.log("🔐 Admin authenticated:", {
-      userId: admin._id?.toString(),
-      name: admin.name,
-      role: admin.role,
-      lastLogin: admin.lastLogin
-    });
-
-    return admin;
-
-  } catch (error) {
-    console.error("❌ Error in findAdminBySSN:", error);
-    throw new Error(`Failed to authenticate admin: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+  return { valid: false, remainingCodes: hashedCodes };
 }
 
-/**
- * Create admin-specific JWT token
- * Contains isAdmin flag to differentiate from regular user tokens
- */
-export function createAdminJWT(admin: AdminT): string {
-  const payload: AdminJWTPayload = {
-    userId: admin._id?.toString() || 'temp-id',
-    role: admin.role,
-    isAdmin: true, // Critical flag
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + Math.floor(TTL / 1000)
+// ─── Pending 2FA Token ──────────────────────────────────────
+
+export function createPendingToken(adminId: string): string {
+  const payload = {
+    userId: adminId,
+    isPending2FA: true,
   };
-
-  return jwt.sign(payload, JWT_SECRET);
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "5m" });
 }
 
-/**
- * Verify admin JWT token
- * Ensures token is admin token (has isAdmin flag)
- */
-export function verifyAdminJWT(token: string): AdminJWTPayload | null {
+export function verifyPendingToken(
+  token: string
+): { userId: string } | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as AdminJWTPayload;
-
-    // CRITICAL: Check if this is an admin token
-    if (!decoded.isAdmin) {
-      console.log('❌ Regular user token used for admin access - BLOCKED');
+    const decoded = jwt.verify(token, JWT_SECRET) as PendingJWTPayload;
+    if (!decoded.isPending2FA) {
       return null;
     }
-
-    // Check if role is admin or superadmin
-    if (decoded.role !== 'admin' && decoded.role !== 'superadmin') {
-      console.log('❌ Invalid role in admin token:', decoded.role);
-      return null;
-    }
-
-    return decoded;
-
-  } catch (error) {
-    console.log('❌ Admin JWT verification failed:', error instanceof Error ? error.message : 'Unknown error');
+    return { userId: decoded.userId };
+  } catch {
     return null;
   }
 }
 
-/**
- * Generate CSRF token for admin session
- */
+// ─── Account Lockout ─────────────────────────────────────────
+
+export function checkAccountLockout(
+  admin: AdminT
+): { locked: boolean; retryAfter?: number } {
+  if (admin.lockedUntil && admin.lockedUntil > new Date()) {
+    const retryAfter = Math.ceil(
+      (admin.lockedUntil.getTime() - Date.now()) / 1000
+    );
+    return { locked: true, retryAfter };
+  }
+  return { locked: false };
+}
+
+export async function recordFailedAttempt(adminId: string): Promise<void> {
+  const admin = await Admin.findById(adminId);
+  if (!admin) return;
+
+  const attempts = (admin.failedLoginAttempts || 0) + 1;
+  let lockedUntil: Date | undefined;
+
+  if (attempts >= 15) {
+    lockedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  } else if (attempts >= 10) {
+    lockedUntil = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+  } else if (attempts >= 5) {
+    lockedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+  }
+
+  await Admin.findByIdAndUpdate(adminId, {
+    failedLoginAttempts: attempts,
+    ...(lockedUntil ? { lockedUntil } : {}),
+  });
+}
+
+export async function resetFailedAttempts(adminId: string): Promise<void> {
+  await Admin.findByIdAndUpdate(adminId, {
+    failedLoginAttempts: 0,
+    $unset: { lockedUntil: 1 },
+  });
+}
+
+// ─── Full Admin JWT (unchanged) ─────────────────────────────
+
+export function createAdminJWT(admin: AdminT): string {
+  const payload: AdminJWTPayload = {
+    userId: admin._id?.toString() || "temp-id",
+    role: admin.role,
+    isAdmin: true,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + Math.floor(TTL / 1000),
+  };
+  return jwt.sign(payload, JWT_SECRET);
+}
+
+export function verifyAdminJWT(token: string): AdminJWTPayload | null {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as AdminJWTPayload;
+
+    if (!decoded.isAdmin) {
+      console.log("❌ Regular user token used for admin access - BLOCKED");
+      return null;
+    }
+
+    if (decoded.role !== "admin" && decoded.role !== "superadmin") {
+      console.log("❌ Invalid role in admin token:", decoded.role);
+      return null;
+    }
+
+    return decoded;
+  } catch (error) {
+    console.log(
+      "❌ Admin JWT verification failed:",
+      error instanceof Error ? error.message : "Unknown error"
+    );
+    return null;
+  }
+}
+
 export function generateAdminCSRFToken(): string {
-  return crypto.randomBytes(32).toString('hex');
+  return crypto.randomBytes(32).toString("hex");
 }

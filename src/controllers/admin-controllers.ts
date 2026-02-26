@@ -1,10 +1,11 @@
 import express from "express";
 import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
+import ProviderSchema from "../schemas/provider-schema";
 import { supabaseChatApi } from "../services/supabase-chat-api";
 import stripeService from "../services/stripe-service";
 import { hashSSN, isValidSwedishSSN } from "../services/auth-service";
-import { getCalendlyUserByEmail } from "../services/calendly-service";
+import { getCalendlyUserByEmail, lookupCalendlyMemberByEmail } from "../services/calendly-service";
 
 /**
  * Get dashboard statistics
@@ -12,20 +13,22 @@ import { getCalendlyUserByEmail } from "../services/calendly-service";
  */
 export const getDashboardStats = async (req: express.Request, res: express.Response) => {
   try {
-    const [totalPatients, totalDoctors, unassignedPatients, activeSubscriptions] = await Promise.all([
+    const [totalPatients, totalDoctors, unassignedPatients, activeSubscriptions, totalProviders] = await Promise.all([
       PatientSchema.countDocuments({}),
       DoctorSchema.countDocuments({}),
       PatientSchema.countDocuments({ doctor: { $exists: false } }),
       PatientSchema.countDocuments({
         'subscription.status': 'active'
-      })
+      }),
+      ProviderSchema.countDocuments({ isActive: true })
     ]);
 
     res.json({
       totalPatients,
       totalDoctors,
       unassignedPatients,
-      activeSubscriptions
+      activeSubscriptions,
+      totalProviders
     });
   } catch (error: any) {
     console.error('Error getting dashboard stats:', error);
@@ -47,7 +50,8 @@ export const getAllPatients = async (req: express.Request, res: express.Response
     const [patients, totalCount] = await Promise.all([
       PatientSchema.find({})
         .populate('doctor', 'name email _id')
-        .select('name email doctor subscription lastLogin createdAt calendly')
+        .populate('providers', 'name providerType _id')
+        .select('name email doctor providers subscription lastLogin createdAt calendly')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
@@ -495,6 +499,443 @@ export const addDoctor = async (req: express.Request, res: express.Response) => 
 
   } catch (error: any) {
     console.error('Error adding doctor:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ============ Provider Management ============
+
+/**
+ * Add a new provider
+ * POST /api/admin/providers
+ * Body: { name, email, providerType, specialty?, bio?, eventTypes?, adminNotes? }
+ */
+export const addProvider = async (req: express.Request, res: express.Response) => {
+  try {
+    const { name, email, providerType, specialty, bio, eventTypes, adminNotes } = req.body;
+
+    if (!name || !email || !providerType) {
+      return res.status(400).json({ error: 'name, email, and providerType are required' });
+    }
+
+    // Check email uniqueness across collections
+    const [existingProvider, existingDoctor, existingPatient] = await Promise.all([
+      ProviderSchema.findOne({ email }),
+      DoctorSchema.findOne({ email }),
+      PatientSchema.findOne({ email }),
+    ]);
+
+    if (existingProvider) {
+      return res.status(409).json({ error: 'A provider with this email already exists' });
+    }
+    if (existingDoctor) {
+      return res.status(409).json({ error: 'This email is already registered to a doctor' });
+    }
+    if (existingPatient) {
+      return res.status(409).json({ error: 'This email is already registered to a patient' });
+    }
+
+    const newProvider = new ProviderSchema({
+      name,
+      email,
+      providerType,
+      specialty,
+      bio,
+      adminNotes,
+      ...(eventTypes && { eventTypes }),
+    });
+
+    const savedProvider = await newProvider.save();
+
+    // Eagerly resolve Calendly user URI
+    let calendlyLinked = false;
+    try {
+      const calendlyUserUri = await getCalendlyUserByEmail(email);
+      if (calendlyUserUri) {
+        savedProvider.calendlyUserUri = calendlyUserUri;
+        await savedProvider.save();
+        calendlyLinked = true;
+      }
+    } catch (err) {
+      console.warn('Could not resolve Calendly user for new provider:', err);
+    }
+
+    res.status(201).json({
+      message: `Provider created successfully.${calendlyLinked ? ' Calendly account linked.' : ' No Calendly account found for this email.'}`,
+      provider: savedProvider,
+    });
+  } catch (error: any) {
+    console.error('Error adding provider:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Get all providers (including inactive)
+ * GET /api/admin/providers
+ */
+export const getAllProviders = async (req: express.Request, res: express.Response) => {
+  try {
+    const providers = await ProviderSchema.find({})
+      .sort({ createdAt: -1 });
+
+    // Get patient count for each provider
+    const providersWithStats = await Promise.all(
+      providers.map(async (provider) => {
+        const patientCount = await PatientSchema.countDocuments({
+          providers: provider._id,
+        });
+        return {
+          ...provider.toObject(),
+          patientCount,
+        };
+      })
+    );
+
+    res.json({ providers: providersWithStats });
+  } catch (error: any) {
+    console.error('Error getting all providers:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Update a provider
+ * PUT /api/admin/providers/:providerId
+ */
+export const updateProvider = async (req: express.Request, res: express.Response) => {
+  try {
+    const { providerId } = req.params;
+    const updates = req.body;
+
+    // Don't allow changing _id
+    delete updates._id;
+
+    const provider = await ProviderSchema.findByIdAndUpdate(
+      providerId,
+      { $set: updates },
+      { new: true }
+    );
+
+    if (!provider) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    res.json({ provider });
+  } catch (error: any) {
+    console.error('Error updating provider:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Deactivate a provider (soft delete)
+ * DELETE /api/admin/providers/:providerId
+ */
+export const deactivateProvider = async (req: express.Request, res: express.Response) => {
+  try {
+    const { providerId } = req.params;
+
+    const provider = await ProviderSchema.findByIdAndUpdate(
+      providerId,
+      { isActive: false },
+      { new: true }
+    );
+
+    if (!provider) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    res.json({ message: 'Provider deactivated successfully', provider });
+  } catch (error: any) {
+    console.error('Error deactivating provider:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Assign provider to patient
+ * POST /api/admin/assign-provider
+ * Body: { patientId, providerId }
+ */
+export const assignProviderToPatient = async (req: express.Request, res: express.Response) => {
+  try {
+    const { patientId, providerId } = req.body;
+
+    if (!patientId || !providerId) {
+      return res.status(400).json({ error: 'patientId and providerId are required' });
+    }
+
+    const [patient, provider] = await Promise.all([
+      PatientSchema.findById(patientId),
+      ProviderSchema.findById(providerId),
+    ]);
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+    if (!provider) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+    if (!provider.isActive) {
+      return res.status(400).json({ error: 'Cannot assign an inactive provider' });
+    }
+
+    // Check if already assigned
+    const alreadyAssigned = (patient.providers || []).some(
+      (p: any) => p.toString() === providerId
+    );
+    if (alreadyAssigned) {
+      return res.status(400).json({ error: 'Provider is already assigned to this patient' });
+    }
+
+    await PatientSchema.findByIdAndUpdate(patientId, {
+      $push: { providers: providerId },
+    });
+
+    res.json({
+      message: 'Provider assigned to patient successfully',
+      patientId,
+      providerId,
+      providerName: provider.name,
+    });
+  } catch (error: any) {
+    console.error('Error assigning provider:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Unassign provider from patient
+ * POST /api/admin/unassign-provider
+ * Body: { patientId, providerId }
+ */
+export const unassignProviderFromPatient = async (req: express.Request, res: express.Response) => {
+  try {
+    const { patientId, providerId } = req.body;
+
+    if (!patientId || !providerId) {
+      return res.status(400).json({ error: 'patientId and providerId are required' });
+    }
+
+    const patient = await PatientSchema.findById(patientId);
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    await PatientSchema.findByIdAndUpdate(patientId, {
+      $pull: { providers: providerId },
+    });
+
+    res.json({
+      message: 'Provider unassigned from patient successfully',
+      patientId,
+      providerId,
+    });
+  } catch (error: any) {
+    console.error('Error unassigning provider:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ============ Provider Tier Overrides ============
+
+/**
+ * Set a provider tier override for a patient
+ * POST /api/admin/provider-tier-override
+ * Body: { patientId, providerId, tier: "free" | "premium" }
+ */
+export const setProviderTierOverride = async (req: express.Request, res: express.Response) => {
+  try {
+    const { patientId, providerId, tier } = req.body;
+
+    if (!patientId || !providerId || !tier) {
+      return res.status(400).json({ error: 'patientId, providerId, and tier are required' });
+    }
+
+    if (!['free', 'premium'].includes(tier)) {
+      return res.status(400).json({ error: 'tier must be "free" or "premium"' });
+    }
+
+    const [patient, provider] = await Promise.all([
+      PatientSchema.findById(patientId),
+      ProviderSchema.findById(providerId),
+    ]);
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+    if (!provider) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    // Upsert: update existing override or push new one
+    const existingIndex = (patient.providerTierOverrides || []).findIndex(
+      (o: any) => o.providerId.toString() === providerId
+    );
+
+    if (existingIndex >= 0) {
+      patient.providerTierOverrides![existingIndex].tier = tier;
+      patient.providerTierOverrides![existingIndex].setBy = 'admin';
+      patient.providerTierOverrides![existingIndex].setAt = new Date();
+    } else {
+      if (!patient.providerTierOverrides) {
+        patient.providerTierOverrides = [];
+      }
+      patient.providerTierOverrides.push({
+        providerId: provider._id,
+        tier,
+        setBy: 'admin',
+        setAt: new Date(),
+      } as any);
+    }
+
+    await patient.save();
+
+    res.json({
+      message: `Tier override set to "${tier}" for provider "${provider.name}" on patient "${patient.name}"`,
+      patientId,
+      providerId,
+      tier,
+    });
+  } catch (error: any) {
+    console.error('Error setting provider tier override:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Remove a provider tier override for a patient (revert to default)
+ * POST /api/admin/remove-provider-tier-override
+ * Body: { patientId, providerId }
+ */
+export const removeProviderTierOverride = async (req: express.Request, res: express.Response) => {
+  try {
+    const { patientId, providerId } = req.body;
+
+    if (!patientId || !providerId) {
+      return res.status(400).json({ error: 'patientId and providerId are required' });
+    }
+
+    const patient = await PatientSchema.findById(patientId);
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    await PatientSchema.findByIdAndUpdate(patientId, {
+      $pull: { providerTierOverrides: { providerId } },
+    });
+
+    res.json({
+      message: 'Tier override removed, reverted to default logic',
+      patientId,
+      providerId,
+    });
+  } catch (error: any) {
+    console.error('Error removing provider tier override:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Get all active providers with resolved tiers for a specific patient
+ * GET /api/admin/patients/:patientId/provider-tiers
+ */
+export const getPatientProviderTiers = async (req: express.Request, res: express.Response) => {
+  try {
+    const { patientId } = req.params;
+
+    const [patient, allActiveProviders] = await Promise.all([
+      PatientSchema.findById(patientId).select('name subscription providerTierOverrides'),
+      ProviderSchema.find({ isActive: true }).sort({ createdAt: -1 }),
+    ]);
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    const { resolveProviderTier } = await import('../services/tier-resolution-service');
+
+    const patientPlanType = patient.subscription?.planType;
+    const overrides = patient.providerTierOverrides || [];
+
+    const providersWithTiers = allActiveProviders.map((provider) => {
+      const { tier, source } = resolveProviderTier({
+        providerId: provider._id.toString(),
+        providerType: provider.providerType,
+        patientPlanType,
+        overrides,
+      });
+
+      return {
+        _id: provider._id,
+        name: provider.name,
+        email: provider.email,
+        providerType: provider.providerType,
+        specialty: provider.specialty,
+        tier,
+        source,
+      };
+    });
+
+    res.json({
+      patientId,
+      patientName: patient.name,
+      patientPlanType: patientPlanType || null,
+      providers: providersWithTiers,
+    });
+  } catch (error: any) {
+    console.error('Error getting patient provider tiers:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ============ Calendly Lookup ============
+
+/**
+ * Lookup a Calendly organization member by email
+ * POST /api/admin/calendly-lookup
+ * Body: { email }
+ * Returns user profile (name, avatar, scheduling_url) + active event types
+ */
+export const calendlyLookup = async (req: express.Request, res: express.Response) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'email is required' });
+    }
+
+    const result = await lookupCalendlyMemberByEmail(email);
+
+    if (!result) {
+      return res.status(404).json({
+        error: 'No Calendly user found with this email',
+        message: 'Make sure this email is added to your Calendly organization first.',
+      });
+    }
+
+    res.json({
+      found: true,
+      user: {
+        name: result.user.name,
+        email: result.user.email,
+        avatarUrl: result.user.avatar_url,
+        schedulingUrl: result.user.scheduling_url,
+        timezone: result.user.timezone,
+        uri: result.user.uri,
+      },
+      eventTypes: result.eventTypes.map(et => ({
+        uri: et.uri,
+        name: et.name,
+        slug: et.slug,
+        duration: et.duration,
+        schedulingUrl: et.scheduling_url,
+        active: et.active,
+      })),
+    });
+  } catch (error: any) {
+    console.error('Error in Calendly lookup:', error);
     res.status(500).json({ error: error.message });
   }
 };

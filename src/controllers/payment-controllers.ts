@@ -1,8 +1,10 @@
 import express from "express";
 import stripeService from "../services/stripe-service";
 import PatientSchema from "../schemas/patient-schema";
+import CancellationFeedbackSchema from "../schemas/cancellation-feedback-schema";
 import Stripe from "stripe";
 import { assignDoctorRoundRobin } from "../services/doctor-assignment-service";
+import type { CancellationReason } from "../types/cancellation-feedback-type";
 
 // Helper to get frontend URL without trailing slash
 const getFrontendUrl = (): string => {
@@ -364,9 +366,15 @@ export const getSubscriptionStatus = async (
       }
     }
 
+    // Determine if user has a usable subscription
+    // An active subscription (including cancel_at_period_end during the period) counts as "has subscription"
+    // A fully canceled subscription does not
+    const liveStatus = subscriptionData?.status || patient.subscription?.status;
+    const isActiveSubscription = liveStatus === 'active' || liveStatus === 'trialing' || liveStatus === 'past_due';
+
     res.json({
-      hasSubscription: !!patient.subscription?.stripeSubscriptionId,
-      subscriptionStatus: patient.subscription?.status,
+      hasSubscription: !!patient.subscription?.stripeSubscriptionId && isActiveSubscription,
+      subscriptionStatus: liveStatus || patient.subscription?.status,
       planType: patient.subscription?.planType,
       subscription: subscriptionData,
     });
@@ -387,6 +395,13 @@ export const cancelSubscription = async (
       return res.status(401).json({ error: "User not authenticated" });
     }
 
+    const { reason } = req.body as { reason?: CancellationReason };
+
+    const validReasons: CancellationReason[] = ['too_expensive', 'no_results', 'reached_goal', 'technical_issues', 'other'];
+    if (!reason || !validReasons.includes(reason)) {
+      return res.status(400).json({ error: "A valid cancellation reason is required" });
+    }
+
     const patient = await PatientSchema.findById(userId);
     if (!patient || !patient.subscription?.stripeSubscriptionId) {
       return res.status(404).json({ error: "No active subscription found" });
@@ -396,31 +411,130 @@ export const cancelSubscription = async (
       patient.subscription.stripeSubscriptionId
     );
 
+    // Calculate subscription duration in days
+    let subscriptionDuration: number | undefined;
+    if (patient.subscription.currentPeriodStart) {
+      const startDate = new Date(patient.subscription.currentPeriodStart);
+      const now = new Date();
+      subscriptionDuration = Math.floor((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    }
+
+    // Save cancellation feedback
+    await CancellationFeedbackSchema.create({
+      patientId: userId,
+      reason,
+      planType: patient.subscription.planType || 'lifestyle',
+      subscriptionDuration,
+    });
+
     // Update nested subscription object
+    // With cancel_at_period_end, subscription stays "active" until period ends
     if (patient.subscription) {
       const { end } = getSubscriptionPeriod(subscription);
-      patient.subscription.status = "canceled";
       patient.subscription.canceledAt = new Date();
-      patient.subscription.cancelAtPeriodEnd =
-        subscription.cancel_at_period_end;
+      patient.subscription.cancelAtPeriodEnd = true;
       if (end) {
         patient.subscription.currentPeriodEnd = new Date(end * 1000);
       }
     }
     await patient.save();
 
+    const { end: periodEnd } = getSubscriptionPeriod(subscription);
+
     res.json({
       message: "Subscription canceled successfully",
       subscription: {
         id: subscription.id,
         status: subscription.status,
-        canceledAt: (subscription as any).canceled_at
-          ? new Date((subscription as any).canceled_at * 1000)
-          : undefined,
+        cancelAtPeriodEnd: true,
+        currentPeriodEnd: periodEnd
+          ? new Date(periodEnd * 1000)
+          : patient.subscription?.currentPeriodEnd,
       },
     });
   } catch (error: any) {
     console.error("Error canceling subscription:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const changePlan = async (
+  req: express.Request,
+  res: express.Response
+) => {
+  try {
+    const userId = (req as any).user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "User not authenticated" });
+    }
+
+    const { planType } = req.body;
+
+    if (!isValidPlanType(planType)) {
+      return res
+        .status(400)
+        .json({ error: 'Invalid plan type. Must be "lifestyle" or "medical"' });
+    }
+
+    const patient = await PatientSchema.findById(userId);
+    if (!patient || !patient.subscription?.stripeSubscriptionId) {
+      return res.status(404).json({ error: "No active subscription found" });
+    }
+
+    if (patient.subscription.planType === planType) {
+      return res.status(400).json({ error: "You are already on this plan" });
+    }
+
+    // Retrieve current subscription to get the item ID
+    const currentSubscription = await stripeService.retrieveSubscription(
+      patient.subscription.stripeSubscriptionId
+    );
+
+    if (currentSubscription.status !== "active") {
+      return res.status(400).json({ error: "Can only change plan on an active subscription" });
+    }
+
+    const currentItemId = currentSubscription.items.data[0]?.id;
+    if (!currentItemId) {
+      return res.status(400).json({ error: "No subscription item found" });
+    }
+
+    // Get the new price ID
+    const newPriceId = stripeService.getPriceId(planType);
+
+    // Update the subscription with the new price (prorates by default)
+    const updatedSubscription = await stripeService.updateSubscription(
+      patient.subscription.stripeSubscriptionId,
+      {
+        items: [
+          {
+            id: currentItemId,
+            price: newPriceId,
+          },
+        ],
+        proration_behavior: "create_prorations",
+      }
+    );
+
+    // Update patient record
+    if (patient.subscription) {
+      patient.subscription.planType = planType;
+      patient.subscription.stripePriceId = newPriceId;
+      patient.subscription.stripeProductId = updatedSubscription.items.data[0].price.product as string;
+    }
+    await patient.save();
+
+    res.json({
+      message: "Plan changed successfully",
+      subscription: {
+        id: updatedSubscription.id,
+        status: updatedSubscription.status,
+        planType,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error changing plan:", error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -585,6 +699,7 @@ export const handleSuccessfulPayment = async (
         // Don't throw - payment was successful, assignment can be done manually later
       }
     }
+
   } catch (error) {
     logCriticalWebhookError("handleSuccessfulPayment", error, {
       sessionId: session?.id,
@@ -675,6 +790,7 @@ export const handleSubscriptionUpdate = async (
         // Don't throw - subscription update was successful
       }
     }
+
   } catch (error) {
     logCriticalWebhookError("handleSubscriptionUpdate", error, {
       subscriptionId: subscription?.id,
@@ -823,6 +939,7 @@ export const handleSetupIntentSucceeded = async (
         // Don't throw - setup intent was successful
       }
     }
+
   } catch (error) {
     logCriticalWebhookError("handleSetupIntentSucceeded", error, {
       setupIntentId: setupIntent?.id,

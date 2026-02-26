@@ -1,242 +1,325 @@
 import { Request, Response } from "express";
-import { codeExchange, buildAuthorizeURL } from "@criipto/oidc";
-import { ErrorResponse } from "@criipto/oidc/dist/response";
+import Admin from "../schemas/admin-schema";
 import {
-  findAdminBySSN,
+  verifyPassword,
+  checkAccountLockout,
+  recordFailedAttempt,
+  resetFailedAttempts,
+  createPendingToken,
+  verifyPendingToken,
+  generateTotpSecret,
+  verifyTotpCode,
+  verifyTotpCodeRaw,
+  encryptTotpSecret,
+  generateBackupCodes,
+  verifyBackupCode,
   createAdminJWT,
   generateAdminCSRFToken,
 } from "../services/admin-auth-service";
-import {
-  generateRandomState,
-  getAppConfig,
-  getClientSecret,
-  verifyCriiptoToken,
-} from "../services/auth-service";
-import { CriiptoUserClaims } from "../types/generic-types";
-import { browserDetails } from "../middleware/auth-middleware";
-
-// Helper to get frontend URL without trailing slash
-const getFrontendUrl = (): string => {
-  const url = process.env.FRONTEND_URL;
-  return url?.replace(/\/+$/, '') || '';
-};
 
 /**
- * Get admin-specific redirect URI
- * Uses request headers to dynamically construct the URI (same as regular auth)
+ * POST /api/admin/auth/login
+ * Phase 1: Email + password verification → returns pending 2FA token
  */
-function getAdminRedirectUri(req: Request): string {
-  // Use request headers to build redirect URI dynamically
-  if (req && req.headers && req.headers.host) {
-    const protocol = req.headers['x-forwarded-proto'] || 'http';
-    return `${protocol}://${req.headers.host}/api/admin/auth/callback`;
-  }
-
-  // Fallback to environment variables if request headers aren't available
-  const baseUrl = process.env.SERVER_URL || 'http://localhost:3000';
-
-  return `${baseUrl}/api/admin/auth/callback`;
-}
-
-/**
- * Initiate admin login with BankID
- * Separate from regular user login
- */
-export const initiateAdminLogin = (req: Request, res: Response): void => {
-  try {
-    const state = generateRandomState();
-    const clientType = browserDetails(req);
-
-    let acrValues: string;
-    switch (clientType) {
-      case "web":
-        acrValues = "urn:grn:authn:se:bankid:same-device";
-        break;
-      case "mobile":
-        acrValues = "urn:grn:authn:se:bankid:same-device";
-        break;
-      case "app":
-        acrValues = "urn:grn:authn:se:bankid";
-        break;
-      default:
-        acrValues = "urn:grn:authn:se:bankid:another-device:qr";
-    }
-
-    const url = buildAuthorizeURL(getAppConfig(), {
-      redirect_uri: getAdminRedirectUri(req),
-      response_type: "code",
-      scope: "openid profile",
-      state,
-      response_mode: "query",
-      acr_values: acrValues,
-    });
-
-    console.log("🔐 Admin login initiated, redirect URI:", getAdminRedirectUri(req));
-
-    res.cookie("admin_oauth_state", state, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: Number(process.env.TTL),
-    });
-
-    res.redirect(url.toString());
-  } catch (error) {
-    console.error("❌ Error initiating admin login:", error);
-    res.status(503).json({
-      error: "Admin authentication service not available",
-      message: "Please configure Criipto credentials in .env file",
-    });
-  }
-};
-
-/**
- * Handle admin callback from BankID
- * ONLY checks Admin collection - does not check Patient or Doctor
- */
-export const handleAdminCallback = async (
+export const adminLogin = async (
   req: Request,
   res: Response
 ): Promise<void> => {
   try {
-    // Check if auth service is initialized
-    try {
-      getAppConfig();
-    } catch {
-      res.status(503).json({
-        error: "Admin authentication service not available",
-        message: "Please configure Criipto credentials in .env file",
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      res.status(400).json({ error: "Email and password are required" });
+      return;
+    }
+
+    // Find admin by email (case-insensitive)
+    const admin = await Admin.findOne({
+      email: { $regex: new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+    });
+
+    if (!admin) {
+      res.status(401).json({ error: "Invalid email or password" });
+      return;
+    }
+
+    // Check account lockout
+    const lockout = checkAccountLockout(admin);
+    if (lockout.locked) {
+      res.status(423).json({
+        error: "Account temporarily locked due to too many failed attempts",
+        retryAfter: lockout.retryAfter,
       });
       return;
     }
 
-    const code: string | undefined =
-      (req.query?.code as string) || (req.body?.code as string);
-    const state: string | undefined =
-      (req.query?.state as string) || (req.body?.state as string);
-    const error: string | undefined =
-      (req.query?.error as string) || (req.body?.error as string);
-
-    // Validate state parameter (CSRF protection)
-    const storedState = req.cookies.admin_oauth_state;
-
-    if (!state || state !== storedState) {
-      console.error("❌ Invalid admin state parameter");
-      const frontendUrl = getFrontendUrl();
-      res.redirect(`${frontendUrl}/admin/login?error=invalid_state`);
+    // Verify password
+    const passwordValid = await verifyPassword(admin.passwordHash, password);
+    if (!passwordValid) {
+      await recordFailedAttempt(admin._id!.toString());
+      res.status(401).json({ error: "Invalid email or password" });
       return;
     }
 
-    // Clear state cookie
-    res.clearCookie("admin_oauth_state");
+    // Reset failed attempts on successful password verification
+    await resetFailedAttempts(admin._id!.toString());
 
-    if (error) {
-      console.error("❌ Admin OAuth error:", error);
-      const frontendUrl = getFrontendUrl();
-      res.redirect(`${frontendUrl}/admin/login?error=${encodeURIComponent(error)}`);
+    // Create pending 2FA token
+    const pendingToken = createPendingToken(admin._id!.toString());
+
+    if (!admin.totpEnabled) {
+      // First login — force 2FA setup
+      res.json({ requires2FASetup: true, pendingToken });
+    } else {
+      // Normal login — require 2FA code
+      res.json({ requires2FA: true, pendingToken });
+    }
+  } catch (error) {
+    console.error("❌ Admin login error:", error);
+    res.status(500).json({ error: "Login failed" });
+  }
+};
+
+/**
+ * POST /api/admin/auth/verify-2fa
+ * Phase 2: Verify TOTP code or backup code → returns full admin session
+ */
+export const verifyAdmin2FA = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { code, pendingToken, isBackupCode } = req.body;
+
+    if (!code || !pendingToken) {
+      res.status(400).json({ error: "Code and pending token are required" });
       return;
     }
 
-    if (!code) {
-      console.error("❌ No authorization code received for admin login");
-      const frontendUrl = getFrontendUrl();
-      res.redirect(`${frontendUrl}/admin/login?error=no_code`);
+    // Verify pending token
+    const pending = verifyPendingToken(pendingToken);
+    if (!pending) {
+      res.status(401).json({ error: "Invalid or expired session. Please log in again." });
       return;
     }
 
-    console.log(
-      "📝 Admin authorization code received:",
-      code.substring(0, 10) + "..."
-    );
+    const admin = await Admin.findById(pending.userId);
+    if (!admin) {
+      res.status(401).json({ error: "Admin not found" });
+      return;
+    }
 
-    // Exchange code for tokens
-    const tokens:
-      | { id_token: string; access_token: string }
-      | ErrorResponse = await codeExchange(getAppConfig(), {
-      code,
-      redirect_uri: getAdminRedirectUri(req),
-      client_secret: getClientSecret(),
+    let valid = false;
+
+    if (isBackupCode) {
+      // Verify backup code
+      if (!admin.backupCodes || admin.backupCodes.length === 0) {
+        res.status(401).json({ error: "No backup codes available" });
+        return;
+      }
+      const result = await verifyBackupCode(code, admin.backupCodes);
+      valid = result.valid;
+      if (valid) {
+        // Remove used backup code
+        admin.backupCodes = result.remainingCodes;
+        await admin.save();
+      }
+    } else {
+      // Verify TOTP code
+      if (!admin.totpSecret) {
+        res.status(401).json({ error: "2FA not set up" });
+        return;
+      }
+      valid = await verifyTotpCode(admin.totpSecret, code);
+    }
+
+    if (!valid) {
+      res.status(401).json({ error: "Invalid verification code" });
+      return;
+    }
+
+    // Update last login
+    admin.lastLogin = new Date();
+    await admin.save();
+
+    // Create full admin JWT
+    const adminJWT = createAdminJWT(admin);
+    const csrfToken = generateAdminCSRFToken();
+
+    // Set cookies
+    res.cookie("admin_token", adminJWT, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: Number(process.env.TTL),
     });
 
-    // Check if token exchange was successful
-    if ("error" in tokens) {
-      console.error("❌ Admin token exchange failed:", tokens.error);
-      const frontendUrl = getFrontendUrl();
-      res.redirect(`${frontendUrl}/admin/login?error=token_exchange_failed`);
-      return;
-    }
+    res.cookie("admin_csrf_token", csrfToken, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: Number(process.env.TTL),
+    });
 
-    console.log("🎯 Admin token exchange successful");
-
-    const idToken: string = tokens.id_token;
-
-    // Verify Criipto token signature using JWKS
-    let criiptoToken: CriiptoUserClaims;
-    try {
-      criiptoToken = await verifyCriiptoToken(idToken);
-      console.log("✅ 🔐 CRIIPTO TOKEN SIGNATURE VERIFIED SUCCESSFULLY (Admin)");
-      console.log("👤 Admin Criipto token claims:", criiptoToken);
-    } catch (verificationError) {
-      console.error("❌ Admin Criipto token verification failed:", verificationError);
-      const frontendUrl = getFrontendUrl();
-      res.redirect(
-        `${frontendUrl}/admin/login?error=token_verification_failed&message=${encodeURIComponent("Token verification failed.")}`
-      );
-      return;
-    }
-
-    // CRITICAL: Find admin ONLY in Admin collection
-    const admin = await findAdminBySSN(criiptoToken);
-
-    if (!admin) {
-      console.error("❌ Admin not found - access denied");
-      const frontendUrl = getFrontendUrl();
-      res.redirect(
-        `${frontendUrl}/admin/login?error=not_admin&message=${encodeURIComponent("Access denied. Admin credentials required.")}`
-      );
-      return;
-    }
-
-    console.log("✅ Admin authenticated successfully:", {
+    console.log("✅ Admin 2FA verified:", {
       userId: admin._id?.toString(),
-      name: admin.name,
       role: admin.role,
     });
 
-    // Create admin-specific JWT
-    const adminJWT = createAdminJWT(admin);
+    res.json({
+      success: true,
+      user: {
+        userId: admin._id?.toString(),
+        role: admin.role,
+        isAdmin: true,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Admin 2FA verification error:", error);
+    res.status(500).json({ error: "Verification failed" });
+  }
+};
 
-    // Generate CSRF token
+/**
+ * POST /api/admin/auth/setup-2fa
+ * Generate TOTP secret and QR code for first-time setup
+ * Does NOT save — user must confirm with a valid code first
+ */
+export const setupAdmin2FA = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { pendingToken } = req.body;
+
+    if (!pendingToken) {
+      res.status(400).json({ error: "Pending token is required" });
+      return;
+    }
+
+    const pending = verifyPendingToken(pendingToken);
+    if (!pending) {
+      res.status(401).json({ error: "Invalid or expired session. Please log in again." });
+      return;
+    }
+
+    const admin = await Admin.findById(pending.userId);
+    if (!admin) {
+      res.status(401).json({ error: "Admin not found" });
+      return;
+    }
+
+    if (admin.totpEnabled) {
+      res.status(400).json({ error: "2FA is already enabled" });
+      return;
+    }
+
+    // Generate TOTP secret and QR code
+    const { secret, qrCodeDataUrl } = await generateTotpSecret(admin.email);
+
+    // Generate backup codes
+    const { plain: backupCodes } = await generateBackupCodes();
+
+    res.json({
+      qrCodeUrl: qrCodeDataUrl,
+      secret,
+      backupCodes,
+    });
+  } catch (error) {
+    console.error("❌ Admin 2FA setup error:", error);
+    res.status(500).json({ error: "2FA setup failed" });
+  }
+};
+
+/**
+ * POST /api/admin/auth/confirm-2fa
+ * Confirm TOTP setup by verifying a code, then save encrypted secret and hashed backup codes
+ */
+export const confirmAdmin2FA = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { pendingToken, code, secret, backupCodes } = req.body;
+
+    if (!pendingToken || !code || !secret || !backupCodes) {
+      res.status(400).json({
+        error: "Pending token, code, secret, and backup codes are required",
+      });
+      return;
+    }
+
+    const pending = verifyPendingToken(pendingToken);
+    if (!pending) {
+      res.status(401).json({ error: "Invalid or expired session. Please log in again." });
+      return;
+    }
+
+    const admin = await Admin.findById(pending.userId);
+    if (!admin) {
+      res.status(401).json({ error: "Admin not found" });
+      return;
+    }
+
+    // Verify the code against the raw secret (proves user set up authenticator)
+    const valid = await verifyTotpCodeRaw(secret, code);
+    if (!valid) {
+      res.status(401).json({ error: "Invalid code. Please scan the QR code and try again." });
+      return;
+    }
+
+    // Encrypt secret and hash backup codes
+    const encryptedSecret = encryptTotpSecret(secret);
+    const hashedBackupCodes: string[] = [];
+    const argon2 = await import("argon2");
+    for (const bc of backupCodes) {
+      hashedBackupCodes.push(
+        await argon2.hash(bc, { type: argon2.argon2id })
+      );
+    }
+
+    // Save to admin doc
+    admin.totpSecret = encryptedSecret;
+    admin.totpEnabled = true;
+    admin.backupCodes = hashedBackupCodes;
+    admin.lastLogin = new Date();
+    await admin.save();
+
+    // Create full admin JWT
+    const adminJWT = createAdminJWT(admin);
     const csrfToken = generateAdminCSRFToken();
 
-    // Store admin JWT in httpOnly cookie (separate from app_token)
+    // Set cookies
     res.cookie("admin_token", adminJWT, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       maxAge: Number(process.env.TTL),
     });
 
-    // Store CSRF token for admin
     res.cookie("admin_csrf_token", csrfToken, {
       httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       maxAge: Number(process.env.TTL),
     });
 
-    // Redirect to admin dashboard
-    const frontendUrl = getFrontendUrl();
-    res.redirect(
-      `${frontendUrl}/admin?auth=success&message=${encodeURIComponent("Admin login successful!")}`
-    );
-  } catch (error) {
-    console.error("❌ Admin callback error:", error);
+    console.log("✅ Admin 2FA setup confirmed:", {
+      userId: admin._id?.toString(),
+      role: admin.role,
+    });
 
-    const frontendUrl = getFrontendUrl();
-    res.redirect(
-      `${frontendUrl}/admin/login?error=authentication_failed&message=${encodeURIComponent("Admin authentication failed. Please try again.")}`
-    );
+    res.json({
+      success: true,
+      user: {
+        userId: admin._id?.toString(),
+        role: admin.role,
+        isAdmin: true,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Admin 2FA confirm error:", error);
+    res.status(500).json({ error: "2FA confirmation failed" });
   }
 };
 
@@ -257,7 +340,7 @@ export const adminLogout = (_req: Request, res: Response): void => {
  */
 export const getCurrentAdmin = (req: any, res: Response): void => {
   try {
-    const adminUser = req.admin; // Set by requireAdminAuth middleware
+    const adminUser = req.admin;
 
     res.json({
       userId: adminUser.userId,

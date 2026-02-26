@@ -4,6 +4,23 @@ export type CalendlyEventType = {
   scheduling_url: string;
   pooling_type: string | null;
   active: boolean;
+  slug?: string;
+  duration?: number;
+  kind?: string;
+  description_plain?: string;
+  color?: string;
+};
+
+export type CalendlyUserProfile = {
+  uri: string;
+  name: string;
+  email: string;
+  avatar_url?: string;
+  scheduling_url: string;
+  slug: string;
+  timezone: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type CalendlySchedulingLink = {

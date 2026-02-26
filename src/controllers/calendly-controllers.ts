@@ -6,6 +6,7 @@ import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-
 import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
 import AdminSchema from "../schemas/admin-schema";
+import ProviderSchema from "../schemas/provider-schema";
 
 // Patient booking endpoint - handles everything server-side
 export const createPatientBookingLink = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -869,6 +870,73 @@ export const handleCalendlyWebhook = async (
         const eventUri = event.payload.scheduled_event.uri;
         const inviteeUri = event.payload.uri;
 
+        // Check if this is a provider booking (utm_term: "provider_{patientId}_{providerId}")
+        if (utmTerm?.startsWith("provider_")) {
+          const parts = utmTerm.split("_");
+          if (parts.length < 3) {
+            console.error(`❌ Malformed provider UTM term: ${utmTerm}`);
+            res.status(400).json({ error: "Malformed provider tracking term" });
+            return;
+          }
+          const patientId = parts[1];
+          const providerId = parts[2];
+          console.log(`📱 Provider booking for patient: ${patientId}, provider: ${providerId}`);
+
+          const [patient, provider] = await Promise.all([
+            PatientSchema.findById(patientId),
+            ProviderSchema.findById(providerId),
+          ]);
+
+          if (!patient) {
+            console.error(`❌ Patient not found for provider webhook: ${patientId}`);
+            res.status(500).json({ error: "Patient not found - retry needed" });
+            return;
+          }
+          if (!provider) {
+            console.error(`❌ Provider not found for webhook: ${providerId}`);
+            res.status(500).json({ error: "Provider not found - retry needed" });
+            return;
+          }
+
+          // Initialize providerMeetings array if needed
+          if (!patient.providerMeetings) {
+            patient.providerMeetings = [];
+          }
+
+          // Idempotency check
+          const existingMeeting = patient.providerMeetings.find(
+            (m: any) => m.eventUri === eventUri
+          );
+          if (existingMeeting) {
+            console.log(`⚠️ Provider meeting already exists for eventUri: ${eventUri} - skipping duplicate`);
+            res.status(200).json({ received: true, message: "Already processed", duplicate: true });
+            return;
+          }
+
+          const endTime = event.payload.scheduled_event.end_time
+            ? new Date(event.payload.scheduled_event.end_time)
+            : undefined;
+
+          patient.providerMeetings.push({
+            providerId: provider._id,
+            providerName: provider.name,
+            providerType: provider.providerType,
+            eventUri,
+            inviteeUri,
+            scheduledTime,
+            endTime,
+            status: "scheduled",
+            eventType: "consultation",
+            createdAt: new Date(),
+          } as any);
+
+          await patient.save();
+
+          console.log(`✅ Provider booking saved for patient: ${patientId}, provider: ${providerId}`);
+          res.status(200).json({ received: true, bookingCreated: true, source: "provider" });
+          return;
+        }
+
         // Check if this is a post-login booking (patientId prefixed with "patient_")
         if (utmTerm?.startsWith("patient_")) {
           const patientId = utmTerm.replace("patient_", "");
@@ -912,8 +980,14 @@ export const handleCalendlyWebhook = async (
           // Add to meetings history
           patient.calendly.meetings.push(meetingRecord);
 
-          // Update current meeting fields
-          patient.calendly.meetingStatus = "scheduled";
+          // Update current meeting fields (don't reset to "scheduled" if gate already passed)
+          const gateAlreadyPassed =
+            patient.calendly.meetingStatus === "completed" ||
+            !!patient.calendly.completedAt ||
+            patient.calendly.meetings.length >= 2;
+          if (!gateAlreadyPassed) {
+            patient.calendly.meetingStatus = "scheduled";
+          }
           patient.calendly.scheduledMeetingTime = scheduledTime;
           patient.calendly.eventUri = eventUri;
           patient.calendly.inviteeUri = inviteeUri;
@@ -1013,6 +1087,21 @@ export const handleCalendlyWebhook = async (
 
           await patient.save();
           console.log(`🧹 Updated meeting status for patient: ${patient._id}`);
+        }
+
+        // Also check provider meetings for cancellation
+        const providerPatient = await PatientSchema.findOne({
+          "providerMeetings.inviteeUri": canceledInviteeUri,
+        });
+        if (providerPatient && providerPatient.providerMeetings) {
+          const pmIndex = providerPatient.providerMeetings.findIndex(
+            (m: any) => m.inviteeUri === canceledInviteeUri
+          );
+          if (pmIndex !== -1) {
+            (providerPatient.providerMeetings[pmIndex] as any).status = "canceled";
+            await providerPatient.save();
+            console.log(`🧹 Updated provider meeting status for patient: ${providerPatient._id}`);
+          }
         }
 
         // Also handle linked user from pending booking

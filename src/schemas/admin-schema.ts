@@ -3,13 +3,6 @@ import { AdminT } from "../types/admin-type";
 
 const AdminSchema: Schema = new Schema(
   {
-    // Common authentication fields
-    ssnHash: {
-      type: String,
-      required: true,
-      unique: true,
-      index: true
-    },
     name: { type: String, required: true },
     given_name: { type: String, required: true },
     family_name: { type: String, required: true },
@@ -20,9 +13,19 @@ const AdminSchema: Schema = new Schema(
       required: true
     },
     lastLogin: { type: Date, default: Date.now },
+    email: { type: String, required: true, unique: true, index: true },
 
-    // Admin-specific fields
-    email: { type: String, required: true, unique: true }
+    // Auth fields
+    passwordHash: { type: String, required: true },
+
+    // 2FA fields
+    totpSecret: { type: String },
+    totpEnabled: { type: Boolean, default: false },
+    backupCodes: [{ type: String }],
+
+    // Brute force protection
+    failedLoginAttempts: { type: Number, default: 0 },
+    lockedUntil: { type: Date }
   },
   { timestamps: true }
 );

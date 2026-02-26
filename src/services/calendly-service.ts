@@ -1,5 +1,5 @@
 import axios, { AxiosRequestConfig } from 'axios';
-import type { CalendlyEventType, CalendlySchedulingLink } from '../types/calendly-types';
+import type { CalendlyEventType, CalendlySchedulingLink, CalendlyUserProfile } from '../types/calendly-types';
 
 // Environment variables
 const CALENDLY_ACCESS_TOKEN: string = process.env.CALENDLY_ACCESS_TOKEN || '';
@@ -117,23 +117,53 @@ export async function createSingleUseLink(eventName: string, userUri?: string): 
 
 export async function getCalendlyUserByEmail(email: string): Promise<string | null> {
   try {
-    // Get current user's organization
-    const currentUser = await getCurrentCalendlyUser();
-    const organizationUri = currentUser.resource.current_organization;
+    const profile = await getCalendlyUserProfileByEmail(email);
+    return profile?.uri || null;
+  } catch (error) {
+    console.error('Error finding user by email:', error);
+    return null;
+  }
+}
 
-    // Get organization members
+/**
+ * Get full Calendly user profile by email (server-side filtered)
+ */
+export async function getCalendlyUserProfileByEmail(email: string): Promise<CalendlyUserProfile | null> {
+  try {
+    const organizationUri = CALENDLY_ORG_URI || (await getCurrentCalendlyUser()).resource.current_organization;
+
     const response = await makeCalendlyRequest('/organization_memberships', {
       params: {
-        organization: organizationUri
+        organization: organizationUri,
+        email,
       }
     });
     const members = response.collection || [];
 
-    // Find member by email
-    const member = members.find((m: any) => m.user.email === email);
-    return member?.user.uri || null;
+    if (members.length === 0) return null;
+    return members[0].user as CalendlyUserProfile;
   } catch (error) {
-    console.error('Error finding user by email:', error);
+    console.error('Error finding user profile by email:', error);
+    return null;
+  }
+}
+
+/**
+ * Lookup a Calendly organization member by email — returns profile + event types
+ * Used by admin to auto-populate provider/doctor details from just an email
+ */
+export async function lookupCalendlyMemberByEmail(email: string): Promise<{
+  user: CalendlyUserProfile;
+  eventTypes: CalendlyEventType[];
+} | null> {
+  try {
+    const profile = await getCalendlyUserProfileByEmail(email);
+    if (!profile) return null;
+
+    const eventTypes = await getCalendlyEventTypes(profile.uri);
+    return { user: profile, eventTypes };
+  } catch (error) {
+    console.error('Error looking up Calendly member:', error);
     return null;
   }
 }

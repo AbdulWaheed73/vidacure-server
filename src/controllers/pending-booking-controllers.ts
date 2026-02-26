@@ -192,8 +192,14 @@ export const linkBookingToUser = async (req: AuthenticatedRequest, res: Response
       createdAt: new Date()
     });
 
-    // Update current meeting fields
-    patient.calendly.meetingStatus = "scheduled";
+    // Update current meeting fields (don't reset to "scheduled" if gate already passed)
+    const gateAlreadyPassed =
+      patient.calendly.meetingStatus === "completed" ||
+      !!patient.calendly.completedAt ||
+      patient.calendly.meetings.length >= 2;
+    if (!gateAlreadyPassed) {
+      patient.calendly.meetingStatus = "scheduled";
+    }
     patient.calendly.scheduledMeetingTime = pendingBooking.scheduledTime;
     patient.calendly.eventUri = pendingBooking.calendlyEventUri;
     patient.calendly.inviteeUri = pendingBooking.calendlyInviteeUri;
@@ -265,12 +271,30 @@ export const getMeetingStatus = async (req: AuthenticatedRequest, res: Response)
     }
 
     // Check if meeting gate is passed
-    const meetingStatus = patient.calendly?.meetingStatus || "none";
+    let meetingStatus = patient.calendly?.meetingStatus || "none";
     const scheduledMeetingTime = patient.calendly?.scheduledMeetingTime;
+    const meetings = patient.calendly?.meetings || [];
 
-    // Meeting gate only passes when meeting is marked as "completed" by admin
-    // This prevents users from bypassing consultation by just waiting for time to pass
-    const isMeetingGatePassed = meetingStatus === "completed";
+    // Gate is permanently passed if:
+    // 1. meetingStatus is "completed", OR
+    // 2. Patient already has completed meetings (completedAt exists), OR
+    // 3. Patient has 2+ meetings (they've clearly been through the process)
+    let isMeetingGatePassed =
+      meetingStatus === "completed" ||
+      !!patient.calendly?.completedAt ||
+      meetings.length >= 2;
+
+    // Auto-complete if scheduled meeting time + 30 min has passed
+    if (!isMeetingGatePassed && meetingStatus === "scheduled" && scheduledMeetingTime && patient.calendly) {
+      const meetingEndTime = new Date(scheduledMeetingTime).getTime() + (30 * 60 * 1000);
+      if (Date.now() > meetingEndTime) {
+        patient.calendly.meetingStatus = "completed";
+        patient.calendly.completedAt = new Date();
+        await patient.save();
+        meetingStatus = "completed";
+        isMeetingGatePassed = true;
+      }
+    }
 
     res.status(200).json({
       success: true,

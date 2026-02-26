@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
 import { verifyAdminJWT, AdminJWTPayload } from "../services/admin-auth-service";
 
 // Extend Request to include admin user
@@ -39,6 +40,21 @@ export function requireAdminAuth(
         message: "Admin authentication required. Please log in at /admin/login",
       });
       return;
+    }
+
+    // CRITICAL: Reject pending 2FA tokens before full verification
+    try {
+      const raw = jwt.decode(adminToken) as Record<string, unknown> | null;
+      if (raw && raw.isPending2FA) {
+        console.log("❌ Pending 2FA token used for admin route - BLOCKED");
+        res.status(401).json({
+          error: "2FA verification required",
+          message: "Please complete two-factor authentication before accessing admin routes.",
+        });
+        return;
+      }
+    } catch {
+      // If decode fails, verifyAdminJWT below will catch it
     }
 
     // Verify admin JWT

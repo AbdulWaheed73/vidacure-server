@@ -9,7 +9,17 @@ import {
   getPatientSubscriptionDetails,
   checkSSN,
   convertPatientToDoctor,
-  addDoctor
+  addDoctor,
+  addProvider,
+  getAllProviders,
+  updateProvider,
+  deactivateProvider,
+  assignProviderToPatient,
+  unassignProviderFromPatient,
+  setProviderTierOverride,
+  removeProviderTierOverride,
+  getPatientProviderTiers,
+  calendlyLookup,
 } from "../controllers/admin-controllers";
 
 const router = express.Router();
@@ -45,6 +55,22 @@ router.post("/convert-patient-to-doctor", convertPatientToDoctor);
 
 // Add new doctor
 router.post("/add-doctor", addDoctor);
+
+// Provider management
+router.post("/providers", addProvider);
+router.get("/providers", getAllProviders);
+router.put("/providers/:providerId", updateProvider);
+router.delete("/providers/:providerId", deactivateProvider);
+router.post("/assign-provider", assignProviderToPatient);
+router.post("/unassign-provider", unassignProviderFromPatient);
+
+// Provider tier overrides
+router.post("/provider-tier-override", setProviderTierOverride);
+router.post("/remove-provider-tier-override", removeProviderTierOverride);
+router.get("/patients/:patientId/provider-tiers", getPatientProviderTiers);
+
+// Calendly lookup
+router.post("/calendly-lookup", calendlyLookup);
 
 // Legacy route - kept for backwards compatibility
 router.get("/users", (req, res) => {

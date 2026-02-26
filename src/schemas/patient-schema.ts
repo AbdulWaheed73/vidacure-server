@@ -41,6 +41,33 @@ const PatientSchema: Schema = new Schema(
     goalWeight: { type: Number },
 
     doctor: { type: Types.ObjectId, ref: "Doctor" },
+    providers: [{ type: Types.ObjectId, ref: "Provider" }],
+
+    providerTierOverrides: [{
+      providerId: { type: Types.ObjectId, ref: "Provider", required: true },
+      tier: { type: String, enum: ["free", "premium"], required: true },
+      setBy: { type: String },
+      setAt: { type: Date, default: Date.now }
+    }],
+
+    providerMeetings: [{
+      providerId: { type: Types.ObjectId, ref: "Provider", required: true },
+      providerName: { type: String, required: true },
+      providerType: { type: String, required: true },
+      eventUri: { type: String, required: true },
+      inviteeUri: { type: String },
+      scheduledTime: { type: Date, required: true },
+      endTime: { type: Date },
+      status: {
+        type: String,
+        enum: ["scheduled", "completed", "canceled"],
+        default: "scheduled"
+      },
+      completedAt: { type: Date },
+      eventType: { type: String },
+      meetingUrl: { type: String },
+      createdAt: { type: Date, default: Date.now }
+    }],
 
     subscription: {
       stripeCustomerId: { type: String },

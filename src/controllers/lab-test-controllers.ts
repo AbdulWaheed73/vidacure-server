@@ -172,73 +172,58 @@ async function syncPendingOrders(patientId: string): Promise<void> {
 
   console.log(`🔄 Syncing ${pendingOrders.length} pending orders from Giddir...`);
 
-  // Try the first order first — if it fails with a permission error, skip the rest
-  const firstOrder = pendingOrders[0];
-  const firstData = firstOrder.giddirServiceRequestId
-    ? await fetchLabResults(firstOrder.giddirServiceRequestId)
-    : await fetchLabResultsByTrackingId(firstOrder.externalTrackingId);
+  await Promise.all(
+    pendingOrders.map(async (order) => {
+      try {
+        const data = order.giddirServiceRequestId
+          ? await fetchLabResults(order.giddirServiceRequestId)
+          : await fetchLabResultsByTrackingId(order.externalTrackingId);
 
-  if (!firstData && pendingOrders.length > 1) {
-    console.log("⚠️ First Giddir sync failed — skipping remaining orders (likely permission issue)");
-  }
+        if (!data) return;
 
-  const ordersToSync = firstData ? pendingOrders : [firstOrder];
+        let changed = false;
 
-  for (const order of ordersToSync) {
-    try {
-      const data = order === firstOrder
-        ? firstData
-        : (order.giddirServiceRequestId
-            ? await fetchLabResults(order.giddirServiceRequestId)
-            : await fetchLabResultsByTrackingId(order.externalTrackingId));
-
-      if (!data) continue;
-
-      let changed = false;
-
-      // Update Giddir service request ID if we got it
-      if (data.serviceRequestId && !order.giddirServiceRequestId) {
-        order.giddirServiceRequestId = data.serviceRequestId;
-        changed = true;
-      }
-
-      // Update status if it changed
-      if (data.subStatus && data.subStatus !== order.status) {
-        order.status = data.subStatus;
-        order.statusHistory.push({
-          status: data.subStatus,
-          timestamp: new Date(),
-        });
-        if (TERMINAL_STATUSES.includes(data.subStatus)) {
-          order.completedAt = new Date();
+        if (data.serviceRequestId && !order.giddirServiceRequestId) {
+          order.giddirServiceRequestId = data.serviceRequestId;
+          changed = true;
         }
-        changed = true;
-      }
 
-      // Update results from observations
-      if (data.observations.length > 0) {
-        for (const obs of data.observations) {
-          const result = parseObservationToResult(obs);
-          const existingIndex = order.results.findIndex(
-            (r) => r.observationId === result.observationId
-          );
-          if (existingIndex >= 0) {
-            order.results[existingIndex] = result;
-          } else {
-            order.results.push(result);
+        if (data.subStatus && data.subStatus !== order.status) {
+          order.status = data.subStatus;
+          order.statusHistory.push({
+            status: data.subStatus,
+            timestamp: new Date(),
+          });
+          if (TERMINAL_STATUSES.includes(data.subStatus)) {
+            order.completedAt = new Date();
           }
+          changed = true;
         }
-        changed = true;
-      }
 
-      if (changed) {
-        await order.save();
-        console.log(`✅ Synced order ${order.externalTrackingId}: status=${order.status}, results=${order.results.length}`);
+        if (data.observations.length > 0) {
+          for (const obs of data.observations) {
+            const result = parseObservationToResult(obs);
+            const existingIndex = order.results.findIndex(
+              (r) => r.observationId === result.observationId
+            );
+            if (existingIndex >= 0) {
+              order.results[existingIndex] = result;
+            } else {
+              order.results.push(result);
+            }
+          }
+          changed = true;
+        }
+
+        if (changed) {
+          await order.save();
+          console.log(`✅ Synced order ${order.externalTrackingId}: status=${order.status}, results=${order.results.length}`);
+        }
+      } catch (error) {
+        console.error(`Error syncing order ${order.externalTrackingId}:`, error);
       }
-    } catch (error) {
-      console.error(`Error syncing order ${order.externalTrackingId}:`, error);
-    }
-  }
+    })
+  );
 }
 
 // ============================================================================
@@ -253,8 +238,10 @@ export const getOrders = async (req: AuthenticatedRequest, res: Response) => {
       return;
     }
 
-    // Sync pending orders from Giddir before returning
-    await syncPendingOrders(userId);
+    // Fire off Giddir sync in the background — don't block the response
+    syncPendingOrders(userId).catch((err) =>
+      console.error("Background Giddir sync error:", err)
+    );
 
     const statusFilter = req.query.status as string | undefined;
     const query: Record<string, unknown> = { patient: userId };

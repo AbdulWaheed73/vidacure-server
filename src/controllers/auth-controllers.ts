@@ -14,6 +14,7 @@ import {
   getClientSecret,
   verifyCriiptoToken,
 } from "../services/auth-service";
+import { consentService } from "../services/consent-service";
 import { CriiptoUserClaims } from "../types/generic-types";
 import Patient from "../schemas/patient-schema";
 import Doctor from "../schemas/doctor-schema";
@@ -435,11 +436,22 @@ export const getCurrentUser = async (
       hasCompletedOnboarding: user.hasCompletedOnboarding || false,
     };
 
+    // Include consent status for patients to avoid a separate API call
+    let consentStatus = undefined;
+    if (user.role === 'patient') {
+      try {
+        consentStatus = await consentService.getConsentStatus(userId);
+      } catch (err) {
+        console.error("Error fetching consent status in /me:", err);
+      }
+    }
+
     res.json({
       authenticated: true,
       message: "User is authenticated",
       user: userData,
       csrfToken: existingCsrfToken || "no-csrf-token",
+      consentStatus,
     });
   } catch (error) {
     console.error("Error in getCurrentUser:", error);
