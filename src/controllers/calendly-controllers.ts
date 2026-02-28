@@ -33,14 +33,14 @@ export const createPatientBookingLink = async (req: AuthenticatedRequest, res: R
     const patient = await PatientSchema.findById(patientId).populate('doctor');
     if (!patient) {
       await auditDatabaseError(req, "create_patient_booking_find_patient", "READ",
-        new Error("Patient not found"));
+        new Error("Patient not found"), patientId);
       res.status(404).json({ error: "Patient not found" });
       return;
     }
 
     if (!patient.doctor) {
       await auditDatabaseError(req, "create_patient_booking_no_doctor", "READ",
-        new Error("Patient has no assigned doctor"));
+        new Error("Patient has no assigned doctor"), patientId);
       res.status(400).json({
         error: "No doctor assigned",
         message: "Please contact support to assign a doctor to your account"
@@ -53,7 +53,7 @@ export const createPatientBookingLink = async (req: AuthenticatedRequest, res: R
     // Check if doctor has Calendly setup
     if (!doctor.calendlyUserUri) {
       await auditDatabaseError(req, "create_patient_booking_doctor_no_calendly", "READ",
-        new Error("Doctor has no Calendly configuration"));
+        new Error("Doctor has no Calendly configuration"), patientId);
       res.status(500).json({
         error: "Doctor not available for booking",
         message: "Your assigned doctor is not set up for online booking. Please contact support."
@@ -114,7 +114,7 @@ export const createPatientBookingLink = async (req: AuthenticatedRequest, res: R
 
       if (!doctorUri) {
         await auditDatabaseError(req, "create_patient_booking_doctor_not_in_calendly", "READ",
-          new Error(`Doctor ${doctor.email} not found in Calendly`));
+          new Error(`Doctor not found in Calendly`), patientId);
         res.status(500).json({
           error: "Doctor not available for booking",
           message: "Your assigned doctor is not set up for online booking. Please contact support."
@@ -165,7 +165,7 @@ export const createPatientBookingLink = async (req: AuthenticatedRequest, res: R
 
   } catch (error) {
     console.error('Error creating patient booking link:', error);
-    await auditDatabaseError(req, "create_patient_booking_link", "CREATE", error);
+    await auditDatabaseError(req, "create_patient_booking_link", "CREATE", error, req.user?.userId);
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
@@ -426,7 +426,7 @@ export const getPatientMeetings = async (req: AuthenticatedRequest, res: Respons
     const patient = await PatientSchema.findById(patientId).populate('doctor');
     if (!patient) {
       await auditDatabaseError(req, "get_patient_meetings_find_patient", "READ",
-        new Error("Patient not found"));
+        new Error("Patient not found"), patientId);
       res.status(404).json({ error: "Patient not found" });
       return;
     }
@@ -515,7 +515,7 @@ export const getPatientMeetings = async (req: AuthenticatedRequest, res: Respons
 
   } catch (error) {
     console.error('Error fetching patient meetings:', error);
-    await auditDatabaseError(req, "get_patient_meetings", "READ", error);
+    await auditDatabaseError(req, "get_patient_meetings", "READ", error, req.user?.userId);
 
     res.status(500).json({
       error: "Failed to fetch your meetings",
@@ -553,7 +553,7 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
     const doctor = await DoctorSchema.findById(doctorId);
     if (!doctor) {
       await auditDatabaseError(req, "get_doctor_own_meetings_find_doctor", "READ",
-        new Error("Doctor not found"));
+        new Error("Doctor not found"), doctorId);
       res.status(404).json({ error: "Doctor not found" });
       return;
     }
@@ -565,7 +565,7 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
 
       if (!doctorUri) {
         await auditDatabaseError(req, "get_doctor_own_meetings_not_in_calendly", "READ",
-          new Error(`Doctor ${doctor.email} not found in Calendly`));
+          new Error("Doctor not found in Calendly"), doctorId);
         res.status(500).json({
           error: "Calendly not configured",
           message: "Your Calendly account is not set up. Please contact support."
@@ -633,7 +633,7 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
 
   } catch (error) {
     console.error('Error fetching doctor meetings:', error);
-    await auditDatabaseError(req, "get_doctor_own_meetings", "READ", error);
+    await auditDatabaseError(req, "get_doctor_own_meetings", "READ", error, req.user?.userId);
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({
@@ -733,7 +733,7 @@ export const getPatientAvailableEventTypes = async (req: AuthenticatedRequest, r
 
   } catch (error) {
     console.error('Error fetching available event types:', error);
-    await auditDatabaseError(req, "get_patient_available_event_types", "READ", error);
+    await auditDatabaseError(req, "get_patient_available_event_types", "READ", error, req.user?.userId);
 
     res.status(500).json({
       error: "Failed to fetch available appointment types",
@@ -1230,7 +1230,7 @@ export const markMeetingComplete = async (
     });
   } catch (error) {
     console.error("Error marking meeting complete:", error);
-    await auditDatabaseError(req, "mark_meeting_complete", "UPDATE", error);
+    await auditDatabaseError(req as any, "mark_meeting_complete", "UPDATE", error, req.params?.patientId);
 
     res.status(500).json({
       error: "Failed to mark meeting as complete",
@@ -1348,7 +1348,7 @@ export const markMeetingCompleteByEmail = async (
     });
   } catch (error) {
     console.error("Error marking meeting complete by email:", error);
-    await auditDatabaseError(req, "mark_meeting_complete_by_email", "UPDATE", error);
+    await auditDatabaseError(req, "mark_meeting_complete_by_email", "UPDATE", error, (req as any).body?.email);
 
     res.status(500).json({
       error: "Failed to mark meeting as complete",

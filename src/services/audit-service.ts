@@ -1,8 +1,27 @@
 import { Types } from "mongoose";
+import crypto from "crypto";
 import AuditLogSchema from "../schemas/auditLog-schema";
 import { AuditLogT } from "../types/auditLog-type";
 import { AuthenticatedRequest } from "../types/generic-types";
 import type { AuditLogData } from "../types/audit-types";
+
+const AUDIT_HMAC_KEY = process.env.AUDIT_HMAC_KEY || '';
+
+/**
+ * Generate an integrity hash for an audit log entry (tamper detection)
+ */
+function generateIntegrityHash(data: AuditLogData, timestamp: Date): string {
+  if (!AUDIT_HMAC_KEY) return '';
+  const payload = JSON.stringify({
+    userId: data.userId,
+    action: data.action,
+    operation: data.operation,
+    success: data.success,
+    targetId: data.targetId,
+    timestamp: timestamp.toISOString(),
+  });
+  return crypto.createHmac('sha256', AUDIT_HMAC_KEY).update(payload).digest('hex');
+}
 
 export function extractIpAddress(req: AuthenticatedRequest): string {
   // Check for IP from various headers in order of preference
@@ -42,7 +61,10 @@ export function extractIpAddress(req: AuthenticatedRequest): string {
 }
 
 export async function logAuditEvent(data: AuditLogData): Promise<void> {
+  const timestamp = new Date();
   try {
+    const integrityHash = generateIntegrityHash(data, timestamp);
+
     const auditLog = new AuditLogSchema({
       userId: new Types.ObjectId(data.userId),
       role: data.role,
@@ -52,15 +74,22 @@ export async function logAuditEvent(data: AuditLogData): Promise<void> {
       targetId: data.targetId ? new Types.ObjectId(data.targetId) : undefined,
       ipAddress: data.ipAddress,
       userAgent: data.userAgent,
-      timestamp: new Date(),
-      metadata: data.metadata
+      timestamp,
+      metadata: data.metadata,
+      ...(integrityHash && { integrityHash }),
     });
 
-    // Save asynchronously without blocking
     await auditLog.save();
   } catch (error) {
-    // Log error but don't throw to avoid disrupting main application flow
-    console.error('Failed to log audit event:', error);
+    // Fallback: write to stderr so it's captured by log aggregation
+    // PDL requires audit events to not be silently lost
+    console.error('CRITICAL: Failed to log audit event:', {
+      action: data.action,
+      userId: data.userId,
+      targetId: data.targetId,
+      timestamp: timestamp.toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 }
 

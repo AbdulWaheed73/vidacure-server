@@ -34,12 +34,14 @@ export async function getDoctorDashboard(
       ]
     };
 
+    await auditDatabaseOperation(req, 'doctor_dashboard_accessed', 'READ', doctorId);
+
     res.json({
       success: true,
       data: dashboardData
     });
   } catch (error) {
-    console.error("Error fetching doctor dashboard:", error);
+    await auditDatabaseError(req, 'doctor_dashboard', 'READ', error, req.user?.userId);
     res.status(500).json({
       error: "Internal server error",
       details: error instanceof Error ? error.message : "Unknown error"
@@ -103,6 +105,8 @@ export async function getDoctorAppointments(
       }
     ];
 
+    await auditDatabaseOperation(req, 'doctor_appointments_accessed', 'READ', req.user?.userId);
+
     res.json({
       success: true,
       data: {
@@ -112,7 +116,7 @@ export async function getDoctorAppointments(
       }
     });
   } catch (error) {
-    console.error("Error fetching doctor appointments:", error);
+    await auditDatabaseError(req, 'doctor_appointments', 'READ', error, req.user?.userId);
     res.status(500).json({
       error: "Internal server error",
       details: error instanceof Error ? error.message : "Unknown error"

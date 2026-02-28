@@ -58,6 +58,20 @@ export type ChatMessageExport = {
   createdAt: string;
 };
 
+export type AccessLogExport = {
+  action: string;
+  role: string;
+  timestamp: string;
+};
+
+export type ConsentHistoryExport = {
+  consentType: string;
+  version: string;
+  accepted: boolean;
+  timestamp: string;
+  withdrawnAt?: string;
+};
+
 export type PatientDataExport = {
   exportedAt: string;
   format: 'vidacure-patient-data-v1';
@@ -78,4 +92,6 @@ export type PatientDataExport = {
   appointments: AppointmentExport[];
   subscription: SubscriptionExport | null;
   chatMessages: ChatMessageExport[];
+  accessLog: AccessLogExport[];
+  consentHistory: ConsentHistoryExport[];
 };

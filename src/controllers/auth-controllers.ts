@@ -21,6 +21,7 @@ import Doctor from "../schemas/doctor-schema";
 
 import { browserDetails } from "../middleware/auth-middleware";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
+import { logAuditEvent } from "../services/audit-service";
 
 export const initiateLogin = (req: Request, res: Response): void => {
   try {
@@ -50,15 +51,12 @@ export const initiateLogin = (req: Request, res: Response): void => {
       response_mode: "query",
       acr_values: acrValues,
     });
-    console.log("\n\ngetRedirectUri(req): ", getRedirectUri(req));
     res.cookie("oauth_state", state, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: Number(process.env.TTL),
     });
-
-    console.log("Setting oauth_state cookie:", state)
 
     res.redirect(url.toString());
   } catch (error) {
@@ -460,10 +458,20 @@ export const getCurrentUser = async (
   }
 };
 
-export const logout = (_req: Request, res: Response): void => {
+export const logout = async (req: Request, res: Response): Promise<void> => {
   try {
+    const userId = (req as any).user?.userId;
     res.clearCookie("app_token");
     res.clearCookie("csrf_token");
+
+    if (userId) {
+      await logAuditEvent({
+        userId, role: (req as any).user?.role || 'unknown', action: 'user_logout',
+        operation: 'DELETE', success: true, ipAddress: req.ip || 'unknown',
+        userAgent: req.headers['user-agent'] || 'unknown',
+      });
+    }
+
     res.json({ success: true, message: "Logged out successfully" });
   } catch {
     res.status(500).json({ error: "Failed to logout" });

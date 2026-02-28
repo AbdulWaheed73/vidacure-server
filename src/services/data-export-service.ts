@@ -1,5 +1,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Types } from 'mongoose';
 import PatientSchema from '../schemas/patient-schema';
+import AuditLogSchema from '../schemas/auditLog-schema';
+import ConsentSchema from '../schemas/consent-schema';
 import type { PatientDataExport, ChatMessageExport } from '../types/data-export-types';
 
 const getSupabaseClient = (): SupabaseClient => {
@@ -112,7 +115,51 @@ export const dataExportService = {
           }
         : null,
       chatMessages,
+      accessLog: await this.fetchAccessLog(userId),
+      consentHistory: await this.fetchConsentHistory(userId),
     };
+  },
+
+  /**
+   * Fetch audit log entries for this patient (loggutdrag)
+   */
+  async fetchAccessLog(userId: string): Promise<{ action: string; role: string; timestamp: string }[]> {
+    try {
+      const logs = await AuditLogSchema.find({ targetId: new Types.ObjectId(userId) })
+        .select('action role timestamp')
+        .sort({ timestamp: -1 })
+        .limit(1000)
+        .lean();
+
+      return logs.map(log => ({
+        action: log.action,
+        role: log.role,
+        timestamp: log.timestamp?.toISOString() || '',
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  /**
+   * Fetch consent history for this patient
+   */
+  async fetchConsentHistory(userId: string): Promise<{ consentType: string; version: string; accepted: boolean; timestamp: string; withdrawnAt?: string }[]> {
+    try {
+      const consents = await ConsentSchema.find({ userId })
+        .sort({ timestamp: -1 })
+        .lean();
+
+      return consents.map(c => ({
+        consentType: c.consentType,
+        version: c.version,
+        accepted: c.accepted,
+        timestamp: c.timestamp?.toISOString() || '',
+        withdrawnAt: c.withdrawnAt ? new Date(c.withdrawnAt).toISOString() : undefined,
+      }));
+    } catch {
+      return [];
+    }
   },
 
   /**

@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   deleteSelf,
+  cancelDeletion,
   deleteUserByAdmin,
   getDeletions,
   getDeletionById
@@ -50,6 +51,18 @@ router.delete(
   auditMiddleware,
   requireCSRF,
   deleteSelf
+);
+
+/**
+ * Cancel pending deletion (within grace period)
+ * POST /api/users/me/cancel-deletion
+ */
+router.post(
+  '/me/cancel-deletion',
+  requireAuth,
+  auditMiddleware,
+  requireCSRF,
+  cancelDeletion
 );
 
 /**

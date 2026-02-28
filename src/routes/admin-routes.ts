@@ -14,12 +14,12 @@ import {
   getAllProviders,
   updateProvider,
   deactivateProvider,
-  assignProviderToPatient,
-  unassignProviderFromPatient,
   setProviderTierOverride,
   removeProviderTierOverride,
   getPatientProviderTiers,
   calendlyLookup,
+  getAuditLogs,
+  getAuditAnomalies,
 } from "../controllers/admin-controllers";
 
 const router = express.Router();
@@ -61,9 +61,6 @@ router.post("/providers", addProvider);
 router.get("/providers", getAllProviders);
 router.put("/providers/:providerId", updateProvider);
 router.delete("/providers/:providerId", deactivateProvider);
-router.post("/assign-provider", assignProviderToPatient);
-router.post("/unassign-provider", unassignProviderFromPatient);
-
 // Provider tier overrides
 router.post("/provider-tier-override", setProviderTierOverride);
 router.post("/remove-provider-tier-override", removeProviderTierOverride);
@@ -71,6 +68,10 @@ router.get("/patients/:patientId/provider-tiers", getPatientProviderTiers);
 
 // Calendly lookup
 router.post("/calendly-lookup", calendlyLookup);
+
+// Audit log review (PDL compliance - systematic log reviews)
+router.get("/audit-logs", getAuditLogs);
+router.get("/audit-logs/anomalies", getAuditAnomalies);
 
 // Legacy route - kept for backwards compatibility
 router.get("/users", (req, res) => {

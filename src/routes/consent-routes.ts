@@ -3,6 +3,7 @@ import {
   recordConsent,
   getConsentStatus,
   getUserConsents,
+  withdrawConsent,
 } from '../controllers/consent-controller';
 import { requireAuth, requireCSRF } from '../middleware/auth-middleware';
 import { auditMiddleware } from '../middleware/audit-middleware';
@@ -41,6 +42,18 @@ router.post(
   auditMiddleware,
   requireCSRF,
   recordConsent
+);
+
+/**
+ * POST /api/consent/withdraw
+ * Withdraw a specific consent type
+ */
+router.post(
+  '/withdraw',
+  requireAuth,
+  auditMiddleware,
+  requireCSRF,
+  withdrawConsent
 );
 
 export default router;

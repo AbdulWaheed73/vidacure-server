@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import Admin from "../schemas/admin-schema";
+import { logAuditEvent } from "../services/audit-service";
 import {
   verifyPassword,
   checkAccountLockout,
@@ -57,12 +58,24 @@ export const adminLogin = async (
     const passwordValid = await verifyPassword(admin.passwordHash, password);
     if (!passwordValid) {
       await recordFailedAttempt(admin._id!.toString());
+      await logAuditEvent({
+        userId: admin._id!.toString(), role: 'admin', action: 'admin_login_failed',
+        operation: 'READ', success: false, ipAddress: req.ip || 'unknown',
+        userAgent: req.headers['user-agent'] || 'unknown',
+        metadata: { reason: 'invalid_password' },
+      });
       res.status(401).json({ error: "Invalid email or password" });
       return;
     }
 
     // Reset failed attempts on successful password verification
     await resetFailedAttempts(admin._id!.toString());
+
+    await logAuditEvent({
+      userId: admin._id!.toString(), role: 'admin', action: 'admin_login_password_verified',
+      operation: 'READ', success: true, ipAddress: req.ip || 'unknown',
+      userAgent: req.headers['user-agent'] || 'unknown',
+    });
 
     // Create pending 2FA token
     const pendingToken = createPendingToken(admin._id!.toString());
@@ -75,7 +88,6 @@ export const adminLogin = async (
       res.json({ requires2FA: true, pendingToken });
     }
   } catch (error) {
-    console.error("❌ Admin login error:", error);
     res.status(500).json({ error: "Login failed" });
   }
 };
@@ -134,6 +146,12 @@ export const verifyAdmin2FA = async (
     }
 
     if (!valid) {
+      await logAuditEvent({
+        userId: admin._id!.toString(), role: 'admin', action: 'admin_2fa_failed',
+        operation: 'READ', success: false, ipAddress: req.ip || 'unknown',
+        userAgent: req.headers['user-agent'] || 'unknown',
+        metadata: { method: isBackupCode ? 'backup_code' : 'totp' },
+      });
       res.status(401).json({ error: "Invalid verification code" });
       return;
     }
@@ -161,9 +179,10 @@ export const verifyAdmin2FA = async (
       maxAge: Number(process.env.TTL),
     });
 
-    console.log("✅ Admin 2FA verified:", {
-      userId: admin._id?.toString(),
-      role: admin.role,
+    await logAuditEvent({
+      userId: admin._id!.toString(), role: 'admin', action: 'admin_login_success',
+      operation: 'READ', success: true, ipAddress: req.ip || 'unknown',
+      userAgent: req.headers['user-agent'] || 'unknown',
     });
 
     res.json({
@@ -175,7 +194,6 @@ export const verifyAdmin2FA = async (
       },
     });
   } catch (error) {
-    console.error("❌ Admin 2FA verification error:", error);
     res.status(500).json({ error: "Verification failed" });
   }
 };
@@ -304,9 +322,10 @@ export const confirmAdmin2FA = async (
       maxAge: Number(process.env.TTL),
     });
 
-    console.log("✅ Admin 2FA setup confirmed:", {
-      userId: admin._id?.toString(),
-      role: admin.role,
+    await logAuditEvent({
+      userId: admin._id!.toString(), role: 'admin', action: 'admin_2fa_setup_confirmed',
+      operation: 'CREATE', success: true, ipAddress: req.ip || 'unknown',
+      userAgent: req.headers['user-agent'] || 'unknown',
     });
 
     res.json({
@@ -318,7 +337,6 @@ export const confirmAdmin2FA = async (
       },
     });
   } catch (error) {
-    console.error("❌ Admin 2FA confirm error:", error);
     res.status(500).json({ error: "2FA confirmation failed" });
   }
 };
@@ -326,11 +344,18 @@ export const confirmAdmin2FA = async (
 /**
  * Admin logout - clear admin tokens
  */
-export const adminLogout = (_req: Request, res: Response): void => {
+export const adminLogout = async (req: any, res: Response): Promise<void> => {
+  const adminId = req.admin?.userId;
   res.clearCookie("admin_token");
   res.clearCookie("admin_csrf_token");
 
-  console.log("👋 Admin logged out");
+  if (adminId) {
+    await logAuditEvent({
+      userId: adminId, role: 'admin', action: 'admin_logout',
+      operation: 'DELETE', success: true, ipAddress: req.ip || 'unknown',
+      userAgent: req.headers['user-agent'] || 'unknown',
+    });
+  }
 
   res.json({ message: "Admin logged out successfully" });
 };

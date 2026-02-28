@@ -1,6 +1,7 @@
 import { Response, NextFunction } from "express";
 import { AuthenticatedRequest } from "../types/generic-types";
-import { createAuditLogger } from "../services/audit-service";
+import { AdminAuthenticatedRequest } from "./admin-auth-middleware";
+import { createAuditLogger, logAuditEvent, extractIpAddress } from "../services/audit-service";
 
 
 export function auditMiddleware(
@@ -20,13 +21,14 @@ export function auditMiddleware(
 export function withAudit<T extends any[]>(
   controllerFn: (req: AuthenticatedRequest, res: Response, ...args: T) => Promise<void>,
   action: string,
-  operation: "CREATE" | "READ" | "UPDATE" | "DELETE"
+  operation: "CREATE" | "READ" | "UPDATE" | "DELETE",
+  targetIdExtractor?: (req: AuthenticatedRequest) => string | undefined
 ) {
   return async (req: AuthenticatedRequest, res: Response, ...args: T): Promise<void> => {
     const startTime = Date.now();
     let success = false;
     let error: any = null;
-    
+
     try {
       await controllerFn(req, res, ...args);
       success = res.statusCode < 400;
@@ -37,17 +39,18 @@ export function withAudit<T extends any[]>(
     } finally {
       // Log the audit event
       if (req.auditLogger) {
+        const targetId = targetIdExtractor ? targetIdExtractor(req) : undefined;
         const metadata = {
           responseTime: Date.now() - startTime,
           statusCode: res.statusCode,
           method: req.method,
           path: req.path
         };
-        
+
         if (success) {
-          await req.auditLogger.logSuccess(action, operation, undefined, metadata);
+          await req.auditLogger.logSuccess(action, operation, targetId, metadata);
         } else {
-          await req.auditLogger.logFailure(action, operation, error, undefined, metadata);
+          await req.auditLogger.logFailure(action, operation, error, targetId, metadata);
         }
       }
     }
@@ -78,4 +81,36 @@ export async function auditDatabaseError(
   if (req.auditLogger) {
     await req.auditLogger.logFailure(action, operation, error, targetId, metadata);
   }
+}
+
+// Admin-specific audit helpers (for AdminAuthenticatedRequest)
+export async function auditAdminAction(
+  req: AdminAuthenticatedRequest,
+  action: string,
+  operation: "CREATE" | "READ" | "UPDATE" | "DELETE",
+  success: boolean,
+  targetId?: string,
+  metadata?: Record<string, any>,
+  error?: any
+): Promise<void> {
+  if (!req.admin) return;
+
+  const ipAddress = extractIpAddress(req as any);
+  const userAgent = req.headers['user-agent'] || 'unknown';
+
+  await logAuditEvent({
+    userId: req.admin.userId,
+    role: 'admin',
+    action,
+    operation,
+    success,
+    targetId,
+    ipAddress,
+    userAgent,
+    metadata: {
+      ...metadata,
+      adminRole: req.admin.role,
+      ...(error && !success ? { error: error?.message || String(error) } : {}),
+    },
+  });
 }

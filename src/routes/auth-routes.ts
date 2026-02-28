@@ -25,22 +25,16 @@ router.post("/login", expressJwt.middleware(), setLogin);
 router.get("/callback", handleCallback);
 router.post("/callback", handleCallback);
 router.get("/me", requireAuth, auditMiddleware, getCurrentUser);
-router.post("/logout", logout);
+router.post("/logout", requireAuth, logout);
 
 router.get("/login/check", requireAuth, auditMiddleware, getCurrentUser)
 
 // Health check endpoint for network connectivity testing
-router.get("/health", (req, res) => {
+router.get("/health", (_req, res) => {
   res.json({
     status: "OK",
     message: "Server is running",
     timestamp: new Date().toISOString(),
-    server: {
-      node: process.version,
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-    },
-    headers: req.headers,
   });
 });
 

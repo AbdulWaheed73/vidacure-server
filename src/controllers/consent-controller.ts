@@ -24,7 +24,7 @@ export const recordConsent = async (req: AuthenticatedRequest, res: Response): P
       return;
     }
 
-    if (consentType !== 'privacy_policy') {
+    if (!consentService.isValidConsentType(consentType)) {
       res.status(400).json({ error: 'Invalid consent type' });
       return;
     }
@@ -58,7 +58,6 @@ export const recordConsent = async (req: AuthenticatedRequest, res: Response): P
       },
     });
   } catch (error: any) {
-    console.error('Error in recordConsent:', error);
     await auditDatabaseError(req, 'record_consent', 'CREATE', error, req.user?.userId);
     res.status(500).json({
       error: 'Failed to record consent',
@@ -68,7 +67,7 @@ export const recordConsent = async (req: AuthenticatedRequest, res: Response): P
 };
 
 /**
- * Get consent status (has user accepted latest version?)
+ * Get consent status for all consent types
  * GET /api/consent/status
  */
 export const getConsentStatus = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -80,13 +79,12 @@ export const getConsentStatus = async (req: AuthenticatedRequest, res: Response)
       return;
     }
 
-    const status = await consentService.getConsentStatus(userId);
+    const status = await consentService.getAllConsentsStatus(userId);
 
     await auditDatabaseOperation(req, 'consent_status_checked', 'READ', userId);
 
     res.status(200).json(status);
   } catch (error: any) {
-    console.error('Error in getConsentStatus:', error);
     await auditDatabaseError(req, 'get_consent_status', 'READ', error, req.user?.userId);
     res.status(500).json({
       error: 'Failed to get consent status',
@@ -114,10 +112,47 @@ export const getUserConsents = async (req: AuthenticatedRequest, res: Response):
 
     res.status(200).json({ consents });
   } catch (error: any) {
-    console.error('Error in getUserConsents:', error);
     await auditDatabaseError(req, 'get_user_consents', 'READ', error, req.user?.userId);
     res.status(500).json({
       error: 'Failed to get consent history',
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * Withdraw a specific consent type
+ * POST /api/consent/withdraw
+ */
+export const withdrawConsent = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+
+    const { consentType } = req.body;
+
+    if (!consentType || !consentService.isValidConsentType(consentType)) {
+      res.status(400).json({ error: 'Valid consentType is required' });
+      return;
+    }
+
+    const ipAddress = req.ip || req.socket.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+
+    await consentService.withdrawConsent(userId, consentType, ipAddress, userAgent);
+
+    res.status(200).json({
+      success: true,
+      message: `Consent for ${consentType} has been withdrawn`,
+    });
+  } catch (error: any) {
+    await auditDatabaseError(req, 'withdraw_consent', 'UPDATE', error, req.user?.userId);
+    res.status(500).json({
+      error: 'Failed to withdraw consent',
       details: error.message,
     });
   }

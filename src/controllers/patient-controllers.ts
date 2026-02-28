@@ -1,16 +1,29 @@
 import { Response } from "express";
 import PatientSchema from "../schemas/patient-schema";
+import AuditLogSchema from "../schemas/auditLog-schema";
 import { AuthenticatedRequest } from "../types/generic-types";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
+import { Types } from "mongoose";
 
 export const getAllPatients = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const patients = await PatientSchema.find().select('name given_name family_name role ssnHash lastLogin createdAt');
-      await auditDatabaseOperation(req, "get_all_patients", "READ", undefined, { count: patients.length });
-      res.status(200).json(patients);
+      const userId = req.user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: "User not authenticated" });
+        return;
+      }
+
+      const patient = await PatientSchema.findById(userId).select('name given_name family_name role lastLogin createdAt');
+      if (!patient) {
+        res.status(404).json({ error: "Patient not found" });
+        return;
+      }
+
+      await auditDatabaseOperation(req, "get_patient", "READ", userId);
+      res.status(200).json([patient]);
     } catch (error) {
-      await auditDatabaseError(req, "get_all_patients", "READ", error);
-      res.status(500).json({ error: "Error fetching patients" });
+      await auditDatabaseError(req, "get_patient", "READ", error);
+      res.status(500).json({ error: "Error fetching patient" });
     }
   };
 
@@ -406,5 +419,65 @@ export const updateProfile = async (req: AuthenticatedRequest, res: Response): P
     console.error("Error updating profile:", error);
     await auditDatabaseError(req, "update_profile", "UPDATE", error, req.user?.userId);
     res.status(500).json({ error: "Error updating profile" });
+  }
+};
+
+/**
+ * Get patient access log (loggutdrag)
+ * PDL Ch. 8 — patient right to see who has accessed their data
+ * GET /api/patient/access-log?page=1&limit=50
+ */
+export const getAccessLog = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const skip = (page - 1) * limit;
+
+    const targetObjectId = new Types.ObjectId(userId);
+
+    const [logs, totalCount] = await Promise.all([
+      AuditLogSchema.find({ targetId: targetObjectId })
+        .select('userId role action operation timestamp ipAddress')
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      AuditLogSchema.countDocuments({ targetId: targetObjectId }),
+    ]);
+
+    // Mask IP addresses (truncate last octet for privacy)
+    const maskedLogs = logs.map((log) => ({
+      accessedBy: {
+        role: log.role,
+        userId: log.userId?.toString(),
+      },
+      action: log.action,
+      operation: log.operation,
+      timestamp: log.timestamp,
+      ipAddress: log.ipAddress
+        ? log.ipAddress.replace(/\.\d+$/, '.***')
+        : undefined,
+    }));
+
+    await auditDatabaseOperation(req, "get_access_log", "READ", userId, { page, limit });
+
+    res.status(200).json({
+      logs: maskedLogs,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+      },
+    });
+  } catch (error) {
+    await auditDatabaseError(req, "get_access_log", "READ", error, req.user?.userId);
+    res.status(500).json({ error: "Error fetching access log" });
   }
 };

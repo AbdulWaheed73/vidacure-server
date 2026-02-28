@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { requireAuth, requireRole, requireActiveSubscription } from '../middleware/auth-middleware';
+import { requireAuth, requireCSRF, requireRole, requireActiveSubscription } from '../middleware/auth-middleware';
+import { auditMiddleware } from '../middleware/audit-middleware';
 import {
   getSupabaseChatToken,
   getPatientConversation,
@@ -19,24 +20,23 @@ const router = Router();
  */
 
 // Token generation - authenticated users only
-// Note: Subscription check is handled in the controller based on user role
-router.post('/token', requireAuth, getSupabaseChatToken);
+router.post('/token', requireAuth, auditMiddleware, requireCSRF, getSupabaseChatToken);
 
 // Patient routes - require active subscription for chat access
-router.get('/conversation', requireAuth, requireRole('patient'), requireActiveSubscription, getPatientConversation);
+router.get('/conversation', requireAuth, auditMiddleware, requireRole('patient'), requireActiveSubscription, getPatientConversation);
 
 // Unread counts - any authenticated user
-router.get('/unread-counts', requireAuth, getUnreadCounts);
+router.get('/unread-counts', requireAuth, auditMiddleware, getUnreadCounts);
 
 // Doctor routes
-router.get('/conversations', requireAuth, requireRole('doctor'), getDoctorConversations);
-router.get('/conversation/:patientId', requireAuth, requireRole('doctor'), getPatientConversationForDoctor);
+router.get('/conversations', requireAuth, auditMiddleware, requireRole('doctor'), getDoctorConversations);
+router.get('/conversation/:patientId', requireAuth, auditMiddleware, requireRole('doctor'), getPatientConversationForDoctor);
 
 // Admin routes
-router.post('/conversation', requireAuth, requireRole(['admin', 'superadmin']), createConversation);
-router.post('/reassign-doctor', requireAuth, requireRole(['admin', 'superadmin']), reassignDoctor);
+router.post('/conversation', requireAuth, auditMiddleware, requireCSRF, requireRole(['admin', 'superadmin']), createConversation);
+router.post('/reassign-doctor', requireAuth, auditMiddleware, requireCSRF, requireRole(['admin', 'superadmin']), reassignDoctor);
 
 // Admin/Doctor routes
-router.post('/system-message', requireAuth, requireRole(['admin', 'superadmin', 'doctor']), sendSystemMessage);
+router.post('/system-message', requireAuth, auditMiddleware, requireCSRF, requireRole(['admin', 'superadmin', 'doctor']), sendSystemMessage);
 
 export default router;

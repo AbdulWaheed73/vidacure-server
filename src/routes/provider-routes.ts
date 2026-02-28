@@ -10,7 +10,7 @@ const router = Router();
 
 // All routes require patient auth (applied at mount level in server.ts)
 
-// Get patient's assigned providers
+// Get all active providers (universal visibility)
 router.get("/my", getMyProviders);
 
 // Get patient's provider meetings

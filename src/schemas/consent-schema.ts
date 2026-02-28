@@ -10,7 +10,7 @@ const ConsentSchema: Schema = new Schema(
     },
     consentType: {
       type: String,
-      enum: ['privacy_policy'],
+      enum: ['privacy_policy', 'treatment_consent', 'data_sharing', 'lab_test_consent', 'communication_consent'],
       required: true
     },
     version: {

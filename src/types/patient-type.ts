@@ -28,7 +28,6 @@ export type PatientT = {
   goalWeight?: number;
 
   doctor?: Types.ObjectId; // ref: Doctor
-  providers?: Types.ObjectId[]; // refs to Provider
 
   providerTierOverrides?: {
     providerId: Types.ObjectId;
@@ -122,6 +121,12 @@ export type PatientT = {
 
   // Supabase Chat related fields
   supabaseConversationId?: string; // Store the patient's Supabase conversation UUID
+
+  // GDPR / PDL data lifecycle fields
+  deletionRequestedAt?: Date;
+  anonymizedAt?: Date;
+  retentionExpiresAt?: Date;
+  deletionCancelledAt?: Date;
 
   createdAt: Date;
   updatedAt: Date;

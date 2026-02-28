@@ -2,16 +2,19 @@ import express from "express";
 import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
 import ProviderSchema from "../schemas/provider-schema";
+import AuditLogSchema from "../schemas/auditLog-schema";
 import { supabaseChatApi } from "../services/supabase-chat-api";
 import stripeService from "../services/stripe-service";
 import { hashSSN, isValidSwedishSSN } from "../services/auth-service";
 import { getCalendlyUserByEmail, lookupCalendlyMemberByEmail } from "../services/calendly-service";
+import { AdminAuthenticatedRequest } from "../middleware/admin-auth-middleware";
+import { auditAdminAction } from "../middleware/audit-middleware";
 
 /**
  * Get dashboard statistics
  * GET /api/admin/dashboard
  */
-export const getDashboardStats = async (req: express.Request, res: express.Response) => {
+export const getDashboardStats = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const [totalPatients, totalDoctors, unassignedPatients, activeSubscriptions, totalProviders] = await Promise.all([
       PatientSchema.countDocuments({}),
@@ -23,6 +26,8 @@ export const getDashboardStats = async (req: express.Request, res: express.Respo
       ProviderSchema.countDocuments({ isActive: true })
     ]);
 
+    await auditAdminAction(req, 'admin_get_dashboard_stats', 'READ', true);
+
     res.json({
       totalPatients,
       totalDoctors,
@@ -31,7 +36,7 @@ export const getDashboardStats = async (req: express.Request, res: express.Respo
       totalProviders
     });
   } catch (error: any) {
-    console.error('Error getting dashboard stats:', error);
+    await auditAdminAction(req, 'admin_get_dashboard_stats', 'READ', false, undefined, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -40,7 +45,7 @@ export const getDashboardStats = async (req: express.Request, res: express.Respo
  * Get all patients with doctor info
  * GET /api/admin/patients?page=1&limit=20&includeStripeData=true
  */
-export const getAllPatients = async (req: express.Request, res: express.Response) => {
+export const getAllPatients = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -50,8 +55,7 @@ export const getAllPatients = async (req: express.Request, res: express.Response
     const [patients, totalCount] = await Promise.all([
       PatientSchema.find({})
         .populate('doctor', 'name email _id')
-        .populate('providers', 'name providerType _id')
-        .select('name email doctor providers subscription lastLogin createdAt calendly')
+        .select('name email doctor subscription lastLogin createdAt calendly')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
@@ -97,6 +101,8 @@ export const getAllPatients = async (req: express.Request, res: express.Response
       );
     }
 
+    await auditAdminAction(req, 'admin_get_all_patients', 'READ', true, undefined, { page, limit, totalCount });
+
     res.json({
       patients: enrichedPatients,
       pagination: {
@@ -107,7 +113,7 @@ export const getAllPatients = async (req: express.Request, res: express.Response
       }
     });
   } catch (error: any) {
-    console.error('Error getting all patients:', error);
+    await auditAdminAction(req, 'admin_get_all_patients', 'READ', false, undefined, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -116,7 +122,7 @@ export const getAllPatients = async (req: express.Request, res: express.Response
  * Get all doctors with patient details
  * GET /api/admin/doctors
  */
-export const getAllDoctors = async (req: express.Request, res: express.Response) => {
+export const getAllDoctors = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const doctors = await DoctorSchema.find({})
       .populate('patients', 'name email subscription.status subscription.planType lastLogin')
@@ -134,11 +140,13 @@ export const getAllDoctors = async (req: express.Request, res: express.Response)
       patients: doctor.patients
     }));
 
+    await auditAdminAction(req, 'admin_get_all_doctors', 'READ', true, undefined, { count: doctorsWithStats.length });
+
     res.json({
       doctors: doctorsWithStats
     });
   } catch (error: any) {
-    console.error('Error getting all doctors:', error);
+    await auditAdminAction(req, 'admin_get_all_doctors', 'READ', false, undefined, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -148,7 +156,7 @@ export const getAllDoctors = async (req: express.Request, res: express.Response)
  * POST /api/admin/reassign-doctor
  * Body: { patientId: string, newDoctorId: string }
  */
-export const reassignDoctor = async (req: express.Request, res: express.Response) => {
+export const reassignDoctor = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { patientId, newDoctorId } = req.body;
 
@@ -178,12 +186,16 @@ export const reassignDoctor = async (req: express.Request, res: express.Response
     // Use Supabase chat API for reassignment (handles participant updates)
     await supabaseChatApi.reassignDoctor(patientId, newDoctorId, oldDoctorId);
 
-    // Fetch updated patient and doctor info
+    // Fetch updated patient and doctor info (select only admin-safe fields, no health data)
     const [updatedPatient, updatedNewDoctor, updatedOldDoctor] = await Promise.all([
-      PatientSchema.findById(patientId).populate('doctor', 'name email'),
+      PatientSchema.findById(patientId)
+        .select('name email doctor subscription lastLogin createdAt')
+        .populate('doctor', 'name email'),
       DoctorSchema.findById(newDoctorId).select('name email patients assignedChannels'),
       oldDoctorId ? DoctorSchema.findById(oldDoctorId).select('name email patients assignedChannels') : null
     ]);
+
+    await auditAdminAction(req, 'admin_reassign_doctor', 'UPDATE', true, patientId, { patientId, newDoctorId, oldDoctorId });
 
     res.json({
       message: 'Doctor reassigned successfully',
@@ -193,7 +205,7 @@ export const reassignDoctor = async (req: express.Request, res: express.Response
     });
 
   } catch (error: any) {
-    console.error('Error reassigning doctor:', error);
+    await auditAdminAction(req, 'admin_reassign_doctor', 'UPDATE', false, req.body?.patientId, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -202,7 +214,7 @@ export const reassignDoctor = async (req: express.Request, res: express.Response
  * Get unassigned patients
  * GET /api/admin/unassigned-patients
  */
-export const getUnassignedPatients = async (req: express.Request, res: express.Response) => {
+export const getUnassignedPatients = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const unassignedPatients = await PatientSchema.find({
       doctor: { $exists: false }
@@ -210,12 +222,14 @@ export const getUnassignedPatients = async (req: express.Request, res: express.R
       .select('name email subscription.status subscription.planType lastLogin createdAt')
       .sort({ createdAt: -1 });
 
+    await auditAdminAction(req, 'admin_get_unassigned_patients', 'READ', true, undefined, { count: unassignedPatients.length });
+
     res.json({
       patients: unassignedPatients,
       count: unassignedPatients.length
     });
   } catch (error: any) {
-    console.error('Error getting unassigned patients:', error);
+    await auditAdminAction(req, 'admin_get_unassigned_patients', 'READ', false, undefined, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -224,7 +238,7 @@ export const getUnassignedPatients = async (req: express.Request, res: express.R
  * Get detailed subscription information for a specific patient
  * GET /api/admin/patients/:patientId/subscription-details
  */
-export const getPatientSubscriptionDetails = async (req: express.Request, res: express.Response) => {
+export const getPatientSubscriptionDetails = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { patientId } = req.params;
 
@@ -262,6 +276,8 @@ export const getPatientSubscriptionDetails = async (req: express.Request, res: e
           : []
       ]);
 
+      await auditAdminAction(req, 'admin_get_patient_subscription', 'READ', true, patientId);
+
       res.json({
         patient: patientObj,
         stripeData: {
@@ -272,14 +288,14 @@ export const getPatientSubscriptionDetails = async (req: express.Request, res: e
         }
       });
     } catch (error: any) {
-      console.error(`Error fetching Stripe data for patient ${patientId}:`, error);
+      await auditAdminAction(req, 'admin_get_patient_subscription', 'READ', false, patientId, undefined, error);
       res.status(500).json({
         error: 'Failed to fetch Stripe subscription details',
         details: error.message
       });
     }
   } catch (error: any) {
-    console.error('Error getting patient subscription details:', error);
+    await auditAdminAction(req, 'admin_get_patient_subscription', 'READ', false, req.params?.patientId, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -289,7 +305,7 @@ export const getPatientSubscriptionDetails = async (req: express.Request, res: e
  * POST /api/admin/check-ssn
  * Body: { ssn: string }
  */
-export const checkSSN = async (req: express.Request, res: express.Response) => {
+export const checkSSN = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { ssn } = req.body;
 
@@ -326,13 +342,15 @@ export const checkSSN = async (req: express.Request, res: express.Response) => {
       });
     }
 
+    await auditAdminAction(req, 'admin_check_ssn', 'READ', true);
+
     // SSN is available
     res.json({
       exists: false
     });
 
   } catch (error: any) {
-    console.error('Error checking SSN:', error);
+    await auditAdminAction(req, 'admin_check_ssn', 'READ', false, undefined, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -342,7 +360,7 @@ export const checkSSN = async (req: express.Request, res: express.Response) => {
  * POST /api/admin/convert-patient-to-doctor
  * Body: { patientId: string, email: string }
  */
-export const convertPatientToDoctor = async (req: express.Request, res: express.Response) => {
+export const convertPatientToDoctor = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { patientId, email } = req.body;
 
@@ -351,8 +369,8 @@ export const convertPatientToDoctor = async (req: express.Request, res: express.
       return res.status(400).json({ error: 'Patient ID and email are required' });
     }
 
-    // Find patient
-    const patient = await PatientSchema.findById(patientId);
+    // Find patient (only need ssnHash and doctor ref for conversion)
+    const patient = await PatientSchema.findById(patientId).select('ssnHash doctor name');
     if (!patient) {
       return res.status(404).json({ error: 'Patient not found' });
     }
@@ -402,6 +420,8 @@ export const convertPatientToDoctor = async (req: express.Request, res: express.
     // Delete patient record
     await PatientSchema.findByIdAndDelete(patientId);
 
+    await auditAdminAction(req, 'admin_convert_patient_to_doctor', 'UPDATE', true, patientId, { newDoctorId: savedDoctor._id?.toString() });
+
     res.status(201).json({
       message: 'Patient successfully converted to doctor. Name will be updated on first BankID login.',
       doctor: {
@@ -412,7 +432,7 @@ export const convertPatientToDoctor = async (req: express.Request, res: express.
     });
 
   } catch (error: any) {
-    console.error('Error converting patient to doctor:', error);
+    await auditAdminAction(req, 'admin_convert_patient_to_doctor', 'UPDATE', false, req.body?.patientId, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -422,7 +442,7 @@ export const convertPatientToDoctor = async (req: express.Request, res: express.
  * POST /api/admin/add-doctor
  * Body: { ssn: string, email: string }
  */
-export const addDoctor = async (req: express.Request, res: express.Response) => {
+export const addDoctor = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { ssn, email, eventTypes } = req.body;
 
@@ -487,6 +507,8 @@ export const addDoctor = async (req: express.Request, res: express.Response) => 
       console.warn('Could not resolve Calendly user for new doctor:', err);
     }
 
+    await auditAdminAction(req, 'admin_add_doctor', 'CREATE', true, savedDoctor._id?.toString(), { email, calendlyLinked });
+
     res.status(201).json({
       message: `Doctor created successfully.${calendlyLinked ? ' Calendly account linked.' : ' No Calendly account found for this email.'} Name will be populated from BankID on first login.`,
       doctor: {
@@ -498,7 +520,7 @@ export const addDoctor = async (req: express.Request, res: express.Response) => 
     });
 
   } catch (error: any) {
-    console.error('Error adding doctor:', error);
+    await auditAdminAction(req, 'admin_add_doctor', 'CREATE', false, undefined, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -510,7 +532,7 @@ export const addDoctor = async (req: express.Request, res: express.Response) => 
  * POST /api/admin/providers
  * Body: { name, email, providerType, specialty?, bio?, eventTypes?, adminNotes? }
  */
-export const addProvider = async (req: express.Request, res: express.Response) => {
+export const addProvider = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { name, email, providerType, specialty, bio, eventTypes, adminNotes } = req.body;
 
@@ -560,12 +582,14 @@ export const addProvider = async (req: express.Request, res: express.Response) =
       console.warn('Could not resolve Calendly user for new provider:', err);
     }
 
+    await auditAdminAction(req, 'admin_add_provider', 'CREATE', true, savedProvider._id?.toString(), { name, email, providerType });
+
     res.status(201).json({
       message: `Provider created successfully.${calendlyLinked ? ' Calendly account linked.' : ' No Calendly account found for this email.'}`,
       provider: savedProvider,
     });
   } catch (error: any) {
-    console.error('Error adding provider:', error);
+    await auditAdminAction(req, 'admin_add_provider', 'CREATE', false, undefined, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -574,7 +598,7 @@ export const addProvider = async (req: express.Request, res: express.Response) =
  * Get all providers (including inactive)
  * GET /api/admin/providers
  */
-export const getAllProviders = async (req: express.Request, res: express.Response) => {
+export const getAllProviders = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const providers = await ProviderSchema.find({})
       .sort({ createdAt: -1 });
@@ -592,9 +616,11 @@ export const getAllProviders = async (req: express.Request, res: express.Respons
       })
     );
 
+    await auditAdminAction(req, 'admin_get_all_providers', 'READ', true, undefined, { count: providersWithStats.length });
+
     res.json({ providers: providersWithStats });
   } catch (error: any) {
-    console.error('Error getting all providers:', error);
+    await auditAdminAction(req, 'admin_get_all_providers', 'READ', false, undefined, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -603,7 +629,7 @@ export const getAllProviders = async (req: express.Request, res: express.Respons
  * Update a provider
  * PUT /api/admin/providers/:providerId
  */
-export const updateProvider = async (req: express.Request, res: express.Response) => {
+export const updateProvider = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { providerId } = req.params;
     const updates = req.body;
@@ -621,9 +647,11 @@ export const updateProvider = async (req: express.Request, res: express.Response
       return res.status(404).json({ error: 'Provider not found' });
     }
 
+    await auditAdminAction(req, 'admin_update_provider', 'UPDATE', true, providerId);
+
     res.json({ provider });
   } catch (error: any) {
-    console.error('Error updating provider:', error);
+    await auditAdminAction(req, 'admin_update_provider', 'UPDATE', false, req.params?.providerId, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -632,7 +660,7 @@ export const updateProvider = async (req: express.Request, res: express.Response
  * Deactivate a provider (soft delete)
  * DELETE /api/admin/providers/:providerId
  */
-export const deactivateProvider = async (req: express.Request, res: express.Response) => {
+export const deactivateProvider = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { providerId } = req.params;
 
@@ -646,94 +674,11 @@ export const deactivateProvider = async (req: express.Request, res: express.Resp
       return res.status(404).json({ error: 'Provider not found' });
     }
 
+    await auditAdminAction(req, 'admin_deactivate_provider', 'DELETE', true, providerId);
+
     res.json({ message: 'Provider deactivated successfully', provider });
   } catch (error: any) {
-    console.error('Error deactivating provider:', error);
-    res.status(500).json({ error: error.message });
-  }
-};
-
-/**
- * Assign provider to patient
- * POST /api/admin/assign-provider
- * Body: { patientId, providerId }
- */
-export const assignProviderToPatient = async (req: express.Request, res: express.Response) => {
-  try {
-    const { patientId, providerId } = req.body;
-
-    if (!patientId || !providerId) {
-      return res.status(400).json({ error: 'patientId and providerId are required' });
-    }
-
-    const [patient, provider] = await Promise.all([
-      PatientSchema.findById(patientId),
-      ProviderSchema.findById(providerId),
-    ]);
-
-    if (!patient) {
-      return res.status(404).json({ error: 'Patient not found' });
-    }
-    if (!provider) {
-      return res.status(404).json({ error: 'Provider not found' });
-    }
-    if (!provider.isActive) {
-      return res.status(400).json({ error: 'Cannot assign an inactive provider' });
-    }
-
-    // Check if already assigned
-    const alreadyAssigned = (patient.providers || []).some(
-      (p: any) => p.toString() === providerId
-    );
-    if (alreadyAssigned) {
-      return res.status(400).json({ error: 'Provider is already assigned to this patient' });
-    }
-
-    await PatientSchema.findByIdAndUpdate(patientId, {
-      $push: { providers: providerId },
-    });
-
-    res.json({
-      message: 'Provider assigned to patient successfully',
-      patientId,
-      providerId,
-      providerName: provider.name,
-    });
-  } catch (error: any) {
-    console.error('Error assigning provider:', error);
-    res.status(500).json({ error: error.message });
-  }
-};
-
-/**
- * Unassign provider from patient
- * POST /api/admin/unassign-provider
- * Body: { patientId, providerId }
- */
-export const unassignProviderFromPatient = async (req: express.Request, res: express.Response) => {
-  try {
-    const { patientId, providerId } = req.body;
-
-    if (!patientId || !providerId) {
-      return res.status(400).json({ error: 'patientId and providerId are required' });
-    }
-
-    const patient = await PatientSchema.findById(patientId);
-    if (!patient) {
-      return res.status(404).json({ error: 'Patient not found' });
-    }
-
-    await PatientSchema.findByIdAndUpdate(patientId, {
-      $pull: { providers: providerId },
-    });
-
-    res.json({
-      message: 'Provider unassigned from patient successfully',
-      patientId,
-      providerId,
-    });
-  } catch (error: any) {
-    console.error('Error unassigning provider:', error);
+    await auditAdminAction(req, 'admin_deactivate_provider', 'DELETE', false, req.params?.providerId, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -745,7 +690,7 @@ export const unassignProviderFromPatient = async (req: express.Request, res: exp
  * POST /api/admin/provider-tier-override
  * Body: { patientId, providerId, tier: "free" | "premium" }
  */
-export const setProviderTierOverride = async (req: express.Request, res: express.Response) => {
+export const setProviderTierOverride = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { patientId, providerId, tier } = req.body;
 
@@ -758,7 +703,7 @@ export const setProviderTierOverride = async (req: express.Request, res: express
     }
 
     const [patient, provider] = await Promise.all([
-      PatientSchema.findById(patientId),
+      PatientSchema.findById(patientId).select('name providerTierOverrides'),
       ProviderSchema.findById(providerId),
     ]);
 
@@ -792,6 +737,8 @@ export const setProviderTierOverride = async (req: express.Request, res: express
 
     await patient.save();
 
+    await auditAdminAction(req, 'admin_set_tier_override', 'UPDATE', true, patientId, { providerId, tier });
+
     res.json({
       message: `Tier override set to "${tier}" for provider "${provider.name}" on patient "${patient.name}"`,
       patientId,
@@ -799,7 +746,7 @@ export const setProviderTierOverride = async (req: express.Request, res: express
       tier,
     });
   } catch (error: any) {
-    console.error('Error setting provider tier override:', error);
+    await auditAdminAction(req, 'admin_set_tier_override', 'UPDATE', false, req.body?.patientId, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -809,7 +756,7 @@ export const setProviderTierOverride = async (req: express.Request, res: express
  * POST /api/admin/remove-provider-tier-override
  * Body: { patientId, providerId }
  */
-export const removeProviderTierOverride = async (req: express.Request, res: express.Response) => {
+export const removeProviderTierOverride = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { patientId, providerId } = req.body;
 
@@ -817,7 +764,7 @@ export const removeProviderTierOverride = async (req: express.Request, res: expr
       return res.status(400).json({ error: 'patientId and providerId are required' });
     }
 
-    const patient = await PatientSchema.findById(patientId);
+    const patient = await PatientSchema.findById(patientId).select('name');
     if (!patient) {
       return res.status(404).json({ error: 'Patient not found' });
     }
@@ -826,13 +773,15 @@ export const removeProviderTierOverride = async (req: express.Request, res: expr
       $pull: { providerTierOverrides: { providerId } },
     });
 
+    await auditAdminAction(req, 'admin_remove_tier_override', 'DELETE', true, patientId, { providerId });
+
     res.json({
       message: 'Tier override removed, reverted to default logic',
       patientId,
       providerId,
     });
   } catch (error: any) {
-    console.error('Error removing provider tier override:', error);
+    await auditAdminAction(req, 'admin_remove_tier_override', 'DELETE', false, req.body?.patientId, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -841,7 +790,7 @@ export const removeProviderTierOverride = async (req: express.Request, res: expr
  * Get all active providers with resolved tiers for a specific patient
  * GET /api/admin/patients/:patientId/provider-tiers
  */
-export const getPatientProviderTiers = async (req: express.Request, res: express.Response) => {
+export const getPatientProviderTiers = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { patientId } = req.params;
 
@@ -878,6 +827,8 @@ export const getPatientProviderTiers = async (req: express.Request, res: express
       };
     });
 
+    await auditAdminAction(req, 'admin_get_patient_tiers', 'READ', true, patientId);
+
     res.json({
       patientId,
       patientName: patient.name,
@@ -885,7 +836,7 @@ export const getPatientProviderTiers = async (req: express.Request, res: express
       providers: providersWithTiers,
     });
   } catch (error: any) {
-    console.error('Error getting patient provider tiers:', error);
+    await auditAdminAction(req, 'admin_get_patient_tiers', 'READ', false, req.params?.patientId, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -898,7 +849,7 @@ export const getPatientProviderTiers = async (req: express.Request, res: express
  * Body: { email }
  * Returns user profile (name, avatar, scheduling_url) + active event types
  */
-export const calendlyLookup = async (req: express.Request, res: express.Response) => {
+export const calendlyLookup = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { email } = req.body;
 
@@ -914,6 +865,8 @@ export const calendlyLookup = async (req: express.Request, res: express.Response
         message: 'Make sure this email is added to your Calendly organization first.',
       });
     }
+
+    await auditAdminAction(req, 'admin_calendly_lookup', 'READ', true, undefined, { email });
 
     res.json({
       found: true,
@@ -935,7 +888,114 @@ export const calendlyLookup = async (req: express.Request, res: express.Response
       })),
     });
   } catch (error: any) {
-    console.error('Error in Calendly lookup:', error);
+    await auditAdminAction(req, 'admin_calendly_lookup', 'READ', false, undefined, undefined, error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ============ Audit Log Review (PDL Compliance) ============
+
+/**
+ * Get audit logs with filters for systematic review
+ * GET /api/admin/audit-logs?page=1&limit=50&userId=&targetId=&action=&dateFrom=&dateTo=&success=
+ */
+export const getAuditLogs = async (req: AdminAuthenticatedRequest, res: express.Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const skip = (page - 1) * limit;
+
+    // Build filter
+    const filter: any = {};
+    if (req.query.userId) filter.userId = req.query.userId;
+    if (req.query.targetId) filter.targetId = req.query.targetId;
+    if (req.query.action) filter.action = { $regex: req.query.action, $options: 'i' };
+    if (req.query.role) filter.role = req.query.role;
+    if (req.query.success !== undefined) filter.success = req.query.success === 'true';
+    if (req.query.dateFrom || req.query.dateTo) {
+      filter.timestamp = {};
+      if (req.query.dateFrom) filter.timestamp.$gte = new Date(req.query.dateFrom as string);
+      if (req.query.dateTo) filter.timestamp.$lte = new Date(req.query.dateTo as string);
+    }
+
+    const [logs, totalCount] = await Promise.all([
+      AuditLogSchema.find(filter)
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      AuditLogSchema.countDocuments(filter),
+    ]);
+
+    await auditAdminAction(req, 'admin_view_audit_logs', 'READ', true, undefined, { page, filters: Object.keys(filter) });
+
+    res.json({
+      logs,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+      },
+    });
+  } catch (error: any) {
+    await auditAdminAction(req, 'admin_view_audit_logs', 'READ', false, undefined, undefined, error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Get anomaly detection summary
+ * GET /api/admin/audit-logs/anomalies
+ * Flags: high-volume access by single user, failed access clusters, unusual hours
+ */
+export const getAuditAnomalies = async (req: AdminAuthenticatedRequest, res: express.Response) => {
+  try {
+    const since = new Date();
+    since.setDate(since.getDate() - 7); // Last 7 days
+
+    // Users accessing many different patients
+    const highVolumeAccessors = await AuditLogSchema.aggregate([
+      { $match: { timestamp: { $gte: since }, targetId: { $exists: true } } },
+      { $group: { _id: '$userId', uniqueTargets: { $addToSet: '$targetId' }, totalAccess: { $sum: 1 } } },
+      { $project: { userId: '$_id', uniqueTargetCount: { $size: '$uniqueTargets' }, totalAccess: 1 } },
+      { $match: { uniqueTargetCount: { $gt: 20 } } },
+      { $sort: { uniqueTargetCount: -1 } },
+      { $limit: 10 },
+    ]);
+
+    // Failed access clusters
+    const failedAccessClusters = await AuditLogSchema.aggregate([
+      { $match: { timestamp: { $gte: since }, success: false } },
+      { $group: { _id: { userId: '$userId', action: '$action' }, count: { $sum: 1 }, latestAttempt: { $max: '$timestamp' } } },
+      { $match: { count: { $gt: 5 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+    ]);
+
+    // Access outside business hours (before 7 AM or after 7 PM CET)
+    const afterHoursAccess = await AuditLogSchema.aggregate([
+      { $match: { timestamp: { $gte: since } } },
+      { $project: { hour: { $hour: { date: '$timestamp', timezone: 'Europe/Stockholm' } }, userId: 1, action: 1, timestamp: 1 } },
+      { $match: { $or: [{ hour: { $lt: 7 } }, { hour: { $gte: 19 } }] } },
+      { $group: { _id: '$userId', afterHoursCount: { $sum: 1 } } },
+      { $match: { afterHoursCount: { $gt: 10 } } },
+      { $sort: { afterHoursCount: -1 } },
+      { $limit: 10 },
+    ]);
+
+    await auditAdminAction(req, 'admin_view_audit_anomalies', 'READ', true);
+
+    res.json({
+      period: { from: since.toISOString(), to: new Date().toISOString() },
+      anomalies: {
+        highVolumeAccessors,
+        failedAccessClusters,
+        afterHoursAccess,
+      },
+    });
+  } catch (error: any) {
+    await auditAdminAction(req, 'admin_view_audit_anomalies', 'READ', false, undefined, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };

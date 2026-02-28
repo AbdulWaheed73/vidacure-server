@@ -46,66 +46,31 @@ export function requireAuth(
 
   // Determine client type
   const clientType = browserDetails(req);
-  console.log("🔍 Client type detected in requireAuth:", clientType);
-  console.log("🔍 Request headers - x-client:", req.headers["x-client"]);
-  console.log(
-    "🔍 Request headers - authorization:",
-    req.headers["authorization"] ? "Bearer token present" : "No Bearer token"
-  );
 
   // Get token based on client type
   if (clientType === "app") {
     // For mobile apps, use Bearer token from Authorization header
     token = req.headers["authorization"]?.split(" ")[1];
-    console.log(
-      "🔑 Using Bearer token for app client:",
-      token ? `Token present (${token.substring(0, 20)}...)` : "No token found"
-    );
   } else {
-     console.log("cookies !!: ", req.cookies);
     // For web and mobile browsers, use cookie
     token = req.cookies?.app_token;
-    console.log(
-      "🔑 Using cookie token for web/mobile client:",
-      token ? `Token present (${token.substring(0, 20)}...)` : "No token found"
-    );
   }
 
   if (!token) {
-    console.log("❌ Authentication failed: No token provided");
     res.status(401).json({
       error: "Not authenticated",
-      details: `No token found for client type: ${clientType}`,
-      clientType,
-      hasAuthHeader: !!req.headers["authorization"],
-      hasCookie: !!req.cookies?.app_token,
     });
     return;
   }
 
-  console.log("🔐 Attempting to verify JWT token...");
   const decoded = verifyAppJWT(token);
   if (!decoded) {
-    console.log("❌ Authentication failed: Token verification failed");
-    console.log("🔍 Token details:", {
-      tokenLength: token.length,
-      tokenStart: token.substring(0, 50),
-      isValidJWT: token.split(".").length === 3,
-    });
     res.status(401).json({
       error: "Invalid or expired token",
-      details:
-        "JWT verification failed - token may be expired, malformed, or signed with wrong secret",
     });
     return;
   }
 
-  console.log(
-    "✅ Authentication passed for user:",
-    decoded.userId,
-    "role:",
-    decoded.role
-  );
   req.user = decoded;
   next();
 }
@@ -150,7 +115,6 @@ export function requireRole(allowedRoles: string | string[]) {
     const userRole = req?.user?.role;
 
     if (!userRole || !roles.includes(userRole)) {
-      console.log("userRole: ", userRole, "  roles: ", roles);
       res.status(403).json({ error: "Insufficient permissions" });
       return;
     }
@@ -191,20 +155,13 @@ export async function requireActiveSubscription(
       const subscriptionStatus = patient.subscription?.status;
 
       if (!subscriptionStatus || !validStatuses.includes(subscriptionStatus)) {
-        console.log(
-          `❌ Subscription check failed for patient ${req.user.userId}: status is "${subscriptionStatus || "none"}"`
-        );
         res.status(403).json({
           error: "Subscription required",
           message: "An active subscription is required to access this feature",
-          currentStatus: subscriptionStatus || "none"
         });
         return;
       }
 
-      console.log(
-        `✅ Subscription check passed for patient ${req.user.userId}: status is "${subscriptionStatus}"`
-      );
       next();
     } catch (error) {
       console.error("❌ Error checking subscription status:", error);

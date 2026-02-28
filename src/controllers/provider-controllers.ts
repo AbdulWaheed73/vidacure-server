@@ -9,6 +9,7 @@ import {
 } from "../services/calendly-service";
 import { resolveProviderTier } from "../services/tier-resolution-service";
 import { AuthenticatedRequest } from "../types/generic-types";
+import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
 
 /**
  * Get ALL active providers with tier info for the authenticated patient
@@ -47,9 +48,11 @@ export const getMyProviders = async (req: AuthenticatedRequest, res: express.Res
       };
     });
 
+    await auditDatabaseOperation(req, 'patient_providers_accessed', 'READ', patientId);
+
     res.json({ providers: providersWithTier });
   } catch (error: any) {
-    console.error("Error getting patient providers:", error);
+    await auditDatabaseError(req, 'get_patient_providers', 'READ', error, req.user?.userId);
     res.status(500).json({ error: error.message });
   }
 };
@@ -73,9 +76,11 @@ export const getProviderDetail = async (req: AuthenticatedRequest, res: express.
       return res.status(404).json({ error: "Provider is no longer active" });
     }
 
+    await auditDatabaseOperation(req, 'provider_detail_accessed', 'READ', req.user?.userId, { providerId });
+
     res.json({ provider });
   } catch (error: any) {
-    console.error("Error getting provider detail:", error);
+    await auditDatabaseError(req, 'get_provider_detail', 'READ', error, req.user?.userId);
     res.status(500).json({ error: error.message });
   }
 };
@@ -164,6 +169,8 @@ export const createProviderBookingLink = async (req: AuthenticatedRequest, res: 
     const separator = bookingUrl.includes("?") ? "&" : "?";
     const trackingUrl = `${bookingUrl}${separator}utm_term=${utmTerm}`;
 
+    await auditDatabaseOperation(req, 'provider_booking_link_created', 'CREATE', patientId, { providerId, tier });
+
     res.json({
       success: true,
       schedulingLink: trackingUrl,
@@ -174,7 +181,7 @@ export const createProviderBookingLink = async (req: AuthenticatedRequest, res: 
       tier,
     });
   } catch (error: any) {
-    console.error("Error creating provider booking link:", error);
+    await auditDatabaseError(req, 'create_provider_booking_link', 'CREATE', error, req.user?.userId);
     res.status(500).json({ error: error.message });
   }
 };
@@ -200,9 +207,11 @@ export const getMyProviderMeetings = async (req: AuthenticatedRequest, res: expr
     const meetings = (patient.providerMeetings || [])
       .sort((a: any, b: any) => new Date(b.scheduledTime).getTime() - new Date(a.scheduledTime).getTime());
 
+    await auditDatabaseOperation(req, 'provider_meetings_accessed', 'READ', patientId);
+
     res.json({ meetings });
   } catch (error: any) {
-    console.error("Error getting provider meetings:", error);
+    await auditDatabaseError(req, 'get_provider_meetings', 'READ', error, req.user?.userId);
     res.status(500).json({ error: error.message });
   }
 };

@@ -7,7 +7,8 @@ import {
   addWeightHistory,
   getWeightHistory,
   getProfile,
-  updateProfile
+  updateProfile,
+  getAccessLog
 } from "../controllers/patient-controllers";
 
 const router = Router();
@@ -27,5 +28,8 @@ router.get("/weight-history", getWeightHistory);
 // Profile routes
 router.get("/profile", getProfile);
 router.patch("/profile", updateProfile);
+
+// Access log (loggutdrag) - PDL Ch. 8
+router.get("/access-log", getAccessLog);
 
 export default router;

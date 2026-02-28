@@ -1,8 +1,24 @@
 import ConsentSchema from '../schemas/consent-schema';
-import { CURRENT_PRIVACY_POLICY_VERSION } from '../config/consent-config';
-import type { ConsentStatusResponse, ConsentType } from '../types/consent-types';
+import { CONSENT_VERSIONS } from '../config/consent-config';
+import type { ConsentStatusResponse, ConsentType, AllConsentsStatusResponse } from '../types/consent-types';
+import { logAuditEvent } from './audit-service';
+
+const VALID_CONSENT_TYPES: ConsentType[] = [
+  'privacy_policy',
+  'treatment_consent',
+  'data_sharing',
+  'lab_test_consent',
+  'communication_consent',
+];
 
 export const consentService = {
+  /**
+   * Validate consent type
+   */
+  isValidConsentType(type: string): type is ConsentType {
+    return VALID_CONSENT_TYPES.includes(type as ConsentType);
+  },
+
   /**
    * Record a consent decision
    */
@@ -28,13 +44,15 @@ export const consentService = {
   },
 
   /**
-   * Check if user has accepted the latest privacy policy version
+   * Check consent status for a specific consent type
    */
-  async getConsentStatus(userId: string): Promise<ConsentStatusResponse> {
+  async getConsentStatus(userId: string, consentType: ConsentType = 'privacy_policy'): Promise<ConsentStatusResponse> {
+    const currentVersion = CONSENT_VERSIONS[consentType];
+
     const latestConsent = await ConsentSchema.findOne({
       userId,
-      consentType: 'privacy_policy',
-      version: CURRENT_PRIVACY_POLICY_VERSION,
+      consentType,
+      version: currentVersion,
       accepted: true,
       withdrawnAt: null,
     })
@@ -43,12 +61,25 @@ export const consentService = {
 
     return {
       hasAcceptedLatest: !!latestConsent,
-      currentVersion: CURRENT_PRIVACY_POLICY_VERSION,
+      currentVersion,
       userConsentVersion: latestConsent?.version,
       acceptedAt: latestConsent?.timestamp
         ? new Date(latestConsent.timestamp).toISOString()
         : undefined,
     };
+  },
+
+  /**
+   * Check status of ALL consent types for a user
+   */
+  async getAllConsentsStatus(userId: string): Promise<AllConsentsStatusResponse> {
+    const consents: Record<string, ConsentStatusResponse> = {};
+
+    for (const consentType of VALID_CONSENT_TYPES) {
+      consents[consentType] = await this.getConsentStatus(userId, consentType);
+    }
+
+    return { consents: consents as Record<ConsentType, ConsentStatusResponse> };
   },
 
   /**
@@ -64,9 +95,10 @@ export const consentService = {
 
   /**
    * Withdraw consent (sets withdrawnAt on all active consents of a type)
+   * Includes audit logging as required by GDPR
    */
-  async withdrawConsent(userId: string, consentType: ConsentType) {
-    await ConsentSchema.updateMany(
+  async withdrawConsent(userId: string, consentType: ConsentType, ipAddress: string, userAgent: string) {
+    const result = await ConsentSchema.updateMany(
       {
         userId,
         consentType,
@@ -77,6 +109,24 @@ export const consentService = {
         withdrawnAt: new Date(),
       }
     );
+
+    // Audit log the withdrawal — legally significant event
+    await logAuditEvent({
+      userId,
+      role: 'patient',
+      action: 'consent_withdrawn',
+      operation: 'UPDATE',
+      success: true,
+      targetId: userId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        consentType,
+        withdrawnCount: result.modifiedCount,
+      },
+    });
+
+    return result;
   },
 };
 

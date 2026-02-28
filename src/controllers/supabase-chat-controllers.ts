@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../types/generic-types';
 import { supabaseChatApi } from '../services/supabase-chat-api';
 import PatientSchema from '../schemas/patient-schema';
 import DoctorSchema from '../schemas/doctor-schema';
+import { auditDatabaseOperation, auditDatabaseError } from '../middleware/audit-middleware';
 
 /**
  * Generate Supabase JWT token for chat
@@ -45,6 +46,8 @@ export async function getSupabaseChatToken(req: AuthenticatedRequest, res: Respo
       ? patient.subscription?.status === 'active' || patient.subscription?.status === 'trialing'
       : true;
 
+    await auditDatabaseOperation(req, 'chat_token_generated', 'READ', userId);
+
     res.json({
       token,
       expiresAt,
@@ -56,7 +59,7 @@ export async function getSupabaseChatToken(req: AuthenticatedRequest, res: Respo
       },
     });
   } catch (error) {
-    console.error('Error generating Supabase chat token:', error);
+    await auditDatabaseError(req, 'chat_token_generate', 'READ', error, req.user?.userId);
     res.status(500).json({ error: 'Failed to generate chat token' });
   }
 }
@@ -96,6 +99,8 @@ export async function getPatientConversation(req: AuthenticatedRequest, res: Res
     // Get full conversation data
     const conversationData = await supabaseChatApi.getPatientConversation(userId);
 
+    await auditDatabaseOperation(req, 'chat_patient_conversation_accessed', 'READ', userId);
+
     res.json({
       conversationId: result.conversationId,
       channelId: result.channelId,
@@ -105,7 +110,7 @@ export async function getPatientConversation(req: AuthenticatedRequest, res: Res
       doctorName,
     });
   } catch (error) {
-    console.error('Error getting patient conversation:', error);
+    await auditDatabaseError(req, 'chat_patient_conversation', 'READ', error, req.user?.userId);
     res.status(500).json({ error: 'Failed to get patient conversation' });
   }
 }
@@ -146,11 +151,13 @@ export async function getDoctorConversations(req: AuthenticatedRequest, res: Res
       })
     );
 
+    await auditDatabaseOperation(req, 'chat_doctor_conversations_accessed', 'READ', userId);
+
     res.json({
       conversations: conversationsWithPatientInfo,
     });
   } catch (error) {
-    console.error('Error getting doctor conversations:', error);
+    await auditDatabaseError(req, 'chat_doctor_conversations', 'READ', error, req.user?.userId);
     res.status(500).json({ error: 'Failed to get doctor conversations' });
   }
 }
@@ -193,6 +200,8 @@ export async function getPatientConversationForDoctor(req: AuthenticatedRequest,
     // Get full conversation data
     const conversationData = await supabaseChatApi.getPatientConversation(patientId);
 
+    await auditDatabaseOperation(req, 'chat_doctor_viewed_patient_conversation', 'READ', patientId);
+
     res.json({
       conversationId: result.conversationId,
       channelId: result.channelId,
@@ -203,7 +212,7 @@ export async function getPatientConversationForDoctor(req: AuthenticatedRequest,
       patientName: patient.name,
     });
   } catch (error) {
-    console.error('Error getting patient conversation for doctor:', error);
+    await auditDatabaseError(req, 'chat_doctor_view_patient_conversation', 'READ', error, req.params?.patientId);
     res.status(500).json({ error: 'Failed to get patient conversation' });
   }
 }
@@ -246,6 +255,8 @@ export async function reassignDoctor(req: AuthenticatedRequest, res: Response): 
     // Perform the reassignment
     await supabaseChatApi.reassignDoctor(patientId, newDoctorId, oldDoctorId);
 
+    await auditDatabaseOperation(req, 'chat_reassign_doctor', 'UPDATE', patientId, { newDoctorId, oldDoctorId });
+
     res.json({
       message: 'Doctor reassigned successfully',
       patientId,
@@ -253,7 +264,7 @@ export async function reassignDoctor(req: AuthenticatedRequest, res: Response): 
       newDoctorId,
     });
   } catch (error) {
-    console.error('Error reassigning doctor:', error);
+    await auditDatabaseError(req, 'chat_reassign_doctor', 'UPDATE', error, req.body?.patientId);
     res.status(500).json({ error: 'Failed to reassign doctor' });
   }
 }
@@ -296,12 +307,14 @@ export async function sendSystemMessage(req: AuthenticatedRequest, res: Response
       userId
     );
 
+    await auditDatabaseOperation(req, 'chat_system_message_sent', 'CREATE', userId, { conversationId });
+
     res.json({
       message: 'System message sent successfully',
       sentMessage,
     });
   } catch (error) {
-    console.error('Error sending system message:', error);
+    await auditDatabaseError(req, 'chat_system_message', 'CREATE', error, req.user?.userId);
     res.status(500).json({ error: 'Failed to send system message' });
   }
 }
@@ -344,6 +357,8 @@ export async function createConversation(req: AuthenticatedRequest, res: Respons
 
     const result = await supabaseChatApi.getOrCreatePatientConversation(patientId, doctorId);
 
+    await auditDatabaseOperation(req, 'chat_conversation_created', 'CREATE', patientId, { doctorId, created: result.created });
+
     res.json({
       message: result.created ? 'Conversation created successfully' : 'Conversation already exists',
       conversationId: result.conversationId,
@@ -351,7 +366,7 @@ export async function createConversation(req: AuthenticatedRequest, res: Respons
       created: result.created,
     });
   } catch (error) {
-    console.error('Error creating conversation:', error);
+    await auditDatabaseError(req, 'chat_create_conversation', 'CREATE', error, req.body?.patientId);
     res.status(500).json({ error: 'Failed to create conversation' });
   }
 }
@@ -370,9 +385,12 @@ export async function getUnreadCounts(req: AuthenticatedRequest, res: Response):
     }
 
     const counts = await supabaseChatApi.getAllUnreadCounts(userId);
+
+    await auditDatabaseOperation(req, 'chat_unread_counts', 'READ', userId);
+
     res.json({ counts });
   } catch (error) {
-    console.error('Error getting unread counts:', error);
+    await auditDatabaseError(req, 'chat_unread_counts', 'READ', error, req.user?.userId);
     res.status(500).json({ error: 'Failed to get unread counts' });
   }
 }

@@ -169,11 +169,6 @@ export async function findUserOnly(criiptoToken: CriiptoUserClaims): Promise<{ u
         existingDoctor.given_name = given_name || '';
         existingDoctor.family_name = family_name || '';
 
-        console.log("✅ Updated doctor name from BankID:", {
-          userId: existingDoctor._id?.toString(),
-          oldName: 'Pending BankID Login',
-          newName: existingDoctor.name
-        });
       }
 
       // Backfill encrypted SSN if missing
@@ -185,13 +180,6 @@ export async function findUserOnly(criiptoToken: CriiptoUserClaims): Promise<{ u
       existingDoctor.lastLogin = new Date();
       await existingDoctor.save();
 
-      console.log("🔐 Existing doctor authenticated (mobile):", {
-        userId: existingDoctor._id?.toString(),
-        name: existingDoctor.name,
-        role: existingDoctor.role,
-        lastLogin: existingDoctor.lastLogin
-      });
-
       return { user: existingDoctor };
     }
 
@@ -201,10 +189,6 @@ export async function findUserOnly(criiptoToken: CriiptoUserClaims): Promise<{ u
     if (existingPatient) {
       // Check if patient has completed onboarding
       if (!existingPatient.hasCompletedOnboarding) {
-        console.log("⚠️ Patient found but onboarding not completed (mobile):", {
-          userId: existingPatient._id?.toString(),
-          name: existingPatient.name
-        });
         return { user: null, error: 'ONBOARDING_REQUIRED' };
       }
 
@@ -219,12 +203,6 @@ export async function findUserOnly(criiptoToken: CriiptoUserClaims): Promise<{ u
         existingPatient.name = name || `${given_name} ${family_name}`.trim();
         existingPatient.given_name = given_name || '';
         existingPatient.family_name = family_name || '';
-
-        console.log("✅ Updated patient name from BankID:", {
-          userId: existingPatient._id?.toString(),
-          oldName: 'Pending BankID Login',
-          newName: existingPatient.name
-        });
       }
 
       // Backfill encrypted SSN if missing
@@ -236,18 +214,10 @@ export async function findUserOnly(criiptoToken: CriiptoUserClaims): Promise<{ u
       existingPatient.lastLogin = new Date();
       await existingPatient.save();
 
-      console.log("🔐 Existing patient authenticated (mobile):", {
-        userId: existingPatient._id?.toString(),
-        name: existingPatient.name,
-        role: existingPatient.role,
-        lastLogin: existingPatient.lastLogin
-      });
-
       return { user: existingPatient };
     }
 
     // User doesn't exist - return error (don't create)
-    console.log("⚠️ User not found for mobile login:", { ssnHash: ssnHash.substring(0, 10) + '...' });
     return { user: null, error: 'USER_NOT_FOUND' };
 
   } catch (error) {
@@ -281,12 +251,6 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
         existingDoctor.name = name || `${given_name} ${family_name}`.trim();
         existingDoctor.given_name = given_name || '';
         existingDoctor.family_name = family_name || '';
-
-        console.log("✅ Updated doctor name from BankID:", {
-          userId: existingDoctor._id?.toString(),
-          oldName: 'Pending BankID Login',
-          newName: existingDoctor.name
-        });
       }
 
       // Backfill encrypted SSN if missing
@@ -297,13 +261,6 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
       // Update last login timestamp
       existingDoctor.lastLogin = new Date();
       await existingDoctor.save();
-
-      console.log("🔐 Existing doctor authenticated:", {
-        userId: existingDoctor._id?.toString(),
-        name: existingDoctor.name,
-        role: existingDoctor.role,
-        lastLogin: existingDoctor.lastLogin
-      });
 
       return { user: existingDoctor, isNewUser: false };
     }
@@ -323,12 +280,6 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
         existingPatient.name = name || `${given_name} ${family_name}`.trim();
         existingPatient.given_name = given_name || '';
         existingPatient.family_name = family_name || '';
-
-        console.log("✅ Updated patient name from BankID:", {
-          userId: existingPatient._id?.toString(),
-          oldName: 'Pending BankID Login',
-          newName: existingPatient.name
-        });
       }
 
       // Backfill encrypted SSN if missing
@@ -339,13 +290,6 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
       // Update last login timestamp
       existingPatient.lastLogin = new Date();
       await existingPatient.save();
-
-      console.log("🔐 Existing patient authenticated:", {
-        userId: existingPatient._id?.toString(),
-        name: existingPatient.name,
-        role: existingPatient.role,
-        lastLogin: existingPatient.lastLogin
-      });
 
       return { user: existingPatient, isNewUser: false };
     }
@@ -364,14 +308,6 @@ export async function findOrCreateUser(criiptoToken: CriiptoUserClaims): Promise
     });
 
     const savedPatient = await newPatient.save();
-
-    console.log("🆕 New patient created and authenticated:", {
-      userId: savedPatient._id?.toString(),
-      name: savedPatient.name,
-      role: savedPatient.role,
-      ssnHash: savedPatient.ssnHash,
-      createdAt: savedPatient.createdAt
-    });
 
     return { user: savedPatient, isNewUser: true };
 
@@ -396,21 +332,9 @@ export function createAppJWT(user: PatientT | DoctorT | BaseUser): string {
 
 export function verifyAppJWT(token: string): AppUserClaims | null {
   try {
-    console.log('🔐 Verifying JWT token...');
-    console.log('🔍 JWT_SECRET available:', !!JWT_SECRET);
-    console.log('🔍 Token format valid:', token.split('.').length === 3);
-    
     const decoded = jwt.verify(token, JWT_SECRET) as AppUserClaims;
-  
-    
     return decoded;
-  } catch (error) {
-    console.log('❌ JWT verification failed:', error instanceof Error ? error.message : 'Unknown error');
-    if (error instanceof jwt.TokenExpiredError) {
-      console.log('🕒 Token is expired');
-    } else if (error instanceof jwt.JsonWebTokenError) {
-      console.log('🔍 Invalid token format or signature');
-    }
+  } catch {
     return null;
   }
 }

@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import databaseConnection from "./utils/database-connection";
 import { validateEnvironment } from "./utils/env-validation";
@@ -8,7 +9,7 @@ import authRoutes from "./routes/auth-routes";
 import patientRoutes from "./routes/patient-routes";
 import doctorRoutes from "./routes/doctor-routes";
 import paymentRoutes from "./routes/payment-routes";
-import chatRoutes from "./routes/chat-routes";
+
 import supabaseChatRoutes from "./routes/supabase-chat-routes";
 import calendlyRoutes from "./routes/calendly-routes";
 import adminRoutes from "./routes/admin-routes";
@@ -22,6 +23,7 @@ import pendingBookingRoutes from "./routes/pending-booking-routes";
 import providerRoutes from "./routes/provider-routes";
 import { requireAuth, requireCSRF, requireRole, requireActiveSubscription } from "./middleware/auth-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
+import { requireConsent } from "./middleware/consent-middleware";
 import os from 'os';
 
 // Validate environment variables before starting the server
@@ -72,6 +74,28 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
+// Security headers (GDPR Art. 32 — security of processing)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", ...(FRONTEND_URL ? [FRONTEND_URL] : [])],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
+
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 
 // Calendly webhook needs raw body for signature verification
@@ -108,13 +132,11 @@ app.use("/api", authRoutes);
 app.use("/api/payment", paymentRoutes);
 // Pending booking routes - mixed public and protected endpoints
 app.use("/api/pending-booking", pendingBookingRoutes);
-app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), patientRoutes);
-app.use("/api/providers", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), providerRoutes);
+app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), requireConsent, patientRoutes);
+app.use("/api/providers", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), requireConsent, providerRoutes);
 app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), doctorRoutes);
-app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), requireActiveSubscription, prescriptionRoutes);
-// Chat routes without CSRF for now - will add CSRF to individual routes that need it
-app.use("/api/chat", requireAuth, auditMiddleware, requireActiveSubscription, chatRoutes);
-// Supabase Chat routes - new implementation
+app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), requireActiveSubscription, requireConsent, prescriptionRoutes);
+// Supabase Chat routes (audit middleware applied per-route inside supabase-chat-routes.ts)
 app.use("/api/supabase-chat", supabaseChatRoutes);
 // Lab test routes - webhook is public (verified by secret), other routes require patient auth
 app.use("/api/lab-tests", labTestRoutes);
@@ -135,6 +157,8 @@ app.use("/api/consent", consentRoutes);
 
 // Admin notification routes
 app.use("/api/admin/notifications", adminNotificationRoutes);
+
+export { app };
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🌟 Server is running on port ${PORT}`);

@@ -12,6 +12,7 @@ export const validateRequiredEnvVars = () => {
     'SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY',
     'SUPABASE_JWT_SECRET',
+    'SSN_ENCRYPTION_KEY',
   ];
 
   const missingVars: string[] = [];
@@ -115,6 +116,12 @@ export const validateEnvironment = () => {
     validateStripePriceIds();
     validateUrls();
     validateGiddirConfig();
+
+    // Optional but recommended security keys
+    if (!process.env.AUDIT_HMAC_KEY) {
+      console.warn('⚠️  AUDIT_HMAC_KEY not set — audit log tamper detection disabled');
+    }
+
     console.log('✅ Environment validation complete\n');
   } catch (error) {
     console.error('❌ Environment validation failed\n');

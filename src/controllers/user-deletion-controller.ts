@@ -30,21 +30,24 @@ export const deleteSelf = async (req: AuthenticatedRequest, res: Response): Prom
       userType: userRole
     });
 
-    // Execute deletion
+    // Execute deletion (patients get grace period, doctors immediate)
     const result = await userDeletionService.deleteUser(userId, userRole, 'self');
 
     await auditDatabaseOperation(req, 'delete_self_completed', 'DELETE', userId, {
       deletionId: result.deletionId,
       confirmationId: result.confirmationId,
-      status: result.results
     });
+
+    const isGracePeriod = userRole === 'patient' && result.gracePeriodEnds > new Date();
 
     res.status(200).json({
       success: true,
-      message: 'Account deleted successfully',
+      message: isGracePeriod
+        ? `Deletion requested. You have 30 days to cancel. Your data will be anonymized after ${result.gracePeriodEnds.toISOString()}.`
+        : 'Account deleted successfully',
       deletionId: result.deletionId,
-      results: result.results,
-      confirmationId: result.confirmationId
+      confirmationId: result.confirmationId,
+      gracePeriodEnds: isGracePeriod ? result.gracePeriodEnds.toISOString() : undefined,
     });
   } catch (error: any) {
     console.error('Error in deleteSelf:', error);
@@ -104,15 +107,14 @@ export const deleteUserByAdmin = async (req: AdminAuthenticatedRequest, res: Res
     await auditDatabaseOperation(req as any, 'admin_delete_user_completed', 'DELETE', userId, {
       deletionId: result.deletionId,
       confirmationId: result.confirmationId,
-      status: result.results
     });
 
     res.status(200).json({
       success: true,
-      message: 'User account deleted successfully',
+      message: 'User account deletion initiated',
       deletionId: result.deletionId,
-      results: result.results,
-      confirmationId: result.confirmationId
+      confirmationId: result.confirmationId,
+      gracePeriodEnds: result.gracePeriodEnds?.toISOString(),
     });
   } catch (error: any) {
     console.error('Error in deleteUserByAdmin:', error);
@@ -204,11 +206,39 @@ export const getDeletionById = async (req: AdminAuthenticatedRequest, res: Respo
 
     res.status(200).json(deletion);
   } catch (error: any) {
-    console.error('Error in getDeletionById:', error);
     await auditDatabaseError(req as any, 'get_deletion_by_id', 'READ', error, req.params.deletionId);
     res.status(500).json({
       error: 'Failed to fetch deletion details',
       details: error.message
+    });
+  }
+};
+
+/**
+ * Cancel a pending deletion within the grace period
+ * POST /api/users/me/cancel-deletion
+ */
+export const cancelDeletion = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+
+    await userDeletionService.cancelDeletion(userId);
+
+    await auditDatabaseOperation(req, 'cancel_deletion', 'UPDATE', userId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Deletion cancelled successfully. Your account will remain active.',
+    });
+  } catch (error: any) {
+    await auditDatabaseError(req, 'cancel_deletion', 'UPDATE', error, req.user?.userId);
+    res.status(400).json({
+      error: error.message || 'Failed to cancel deletion',
     });
   }
 };

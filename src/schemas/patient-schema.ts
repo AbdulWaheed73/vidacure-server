@@ -41,7 +41,6 @@ const PatientSchema: Schema = new Schema(
     goalWeight: { type: Number },
 
     doctor: { type: Types.ObjectId, ref: "Doctor" },
-    providers: [{ type: Types.ObjectId, ref: "Provider" }],
 
     providerTierOverrides: [{
       providerId: { type: Types.ObjectId, ref: "Provider", required: true },
@@ -168,7 +167,13 @@ const PatientSchema: Schema = new Schema(
     chatChannelId: { type: String }, // Store the patient's medical channel ID
 
     // Supabase Chat related fields
-    supabaseConversationId: { type: String } // Store the patient's Supabase conversation UUID
+    supabaseConversationId: { type: String }, // Store the patient's Supabase conversation UUID
+
+    // GDPR / PDL data lifecycle fields
+    deletionRequestedAt: { type: Date },          // When patient requested account deletion
+    anonymizedAt: { type: Date },                  // When personal identifiers were stripped
+    retentionExpiresAt: { type: Date },            // When clinical data can be fully purged (PDL 10-year rule)
+    deletionCancelledAt: { type: Date },           // If patient cancelled deletion within grace period
   },
   { timestamps: true }
 );

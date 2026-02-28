@@ -11,4 +11,5 @@ export type AuditLogT = {
   userAgent?: string;
   timestamp: Date;
   metadata?: Record<string, any>;
+  integrityHash?: string;
 };

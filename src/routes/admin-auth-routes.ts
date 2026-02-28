@@ -48,7 +48,7 @@ router.post("/confirm-2fa", adminAuthRateLimiter, confirmAdmin2FA);
  * POST /api/admin/auth/logout
  * Admin logout - clears admin_token and admin_csrf_token cookies
  */
-router.post("/logout", adminLogout);
+router.post("/logout", requireAdminAuth, adminLogout);
 
 /**
  * GET /api/admin/auth/me
