@@ -13,6 +13,7 @@ import {
   fetchLabResults,
   fetchLabResultsByTrackingId,
 } from "../services/giddir-service";
+import stripeService from "../services/stripe-service";
 import { GiddirSubStatus } from "../types/giddir-types";
 
 // ============================================================================
@@ -155,6 +156,139 @@ export const placeLabTestOrder = async (req: AuthenticatedRequest, res: Response
 };
 
 // ============================================================================
+// POST /create-checkout-session — Create Stripe Checkout for a lab test
+// ============================================================================
+
+const getFrontendUrl = (): string => {
+  const url = process.env.FRONTEND_URL;
+  return url?.replace(/\/+$/, "") || "";
+};
+
+export const createLabTestCheckoutSession = async (
+  req: AuthenticatedRequest,
+  res: Response
+) => {
+  try {
+    const { testPackageId } = req.body;
+
+    if (!testPackageId) {
+      res.status(400).json({ success: false, message: "testPackageId is required" });
+      return;
+    }
+
+    const testPackage = LAB_TEST_PACKAGES.find((p) => p.id === testPackageId);
+    if (!testPackage) {
+      res.status(400).json({ success: false, message: "Invalid test package ID" });
+      return;
+    }
+
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ success: false, message: "Unauthorized" });
+      return;
+    }
+
+    const patient = await Patient.findById(userId);
+    if (!patient) {
+      res.status(404).json({ success: false, message: "Patient not found" });
+      return;
+    }
+
+    // Get or create Stripe customer
+    let customerId = patient.subscription?.stripeCustomerId;
+
+    if (!customerId) {
+      const customer = await stripeService.createCustomer(
+        patient.email || `patient-${patient._id}@vidacure.com`,
+        patient.name,
+        { userId: userId.toString() }
+      );
+      customerId = customer.id;
+
+      if (!patient.subscription) {
+        patient.subscription = {
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: "",
+          stripePriceId: "",
+          stripeProductId: "",
+          status: "incomplete",
+          planType: "lifestyle",
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: new Date(),
+          cancelAtPeriodEnd: false,
+        };
+      } else {
+        patient.subscription.stripeCustomerId = customerId;
+      }
+      await patient.save();
+    }
+
+    // Create a pending LabTestOrder
+    const order = new LabTestOrder({
+      patient: userId,
+      testPackage: {
+        id: testPackage.id,
+        productCode: testPackage.productCode,
+        name: testPackage.name,
+        nameSv: testPackage.nameSv,
+      },
+      status: "draft",
+      paymentStatus: "pending_payment",
+      statusHistory: [{ status: "draft", timestamp: new Date() }],
+      results: [],
+    });
+
+    await order.save();
+
+    const frontendUrl = getFrontendUrl();
+    if (!frontendUrl) {
+      res.status(500).json({ success: false, message: "Server configuration error" });
+      return;
+    }
+
+    const successUrl = `${frontendUrl}/lab-tests/payment-success?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${frontendUrl}/lab-tests/payment-canceled`;
+
+    const session = await stripeService.createLabTestCheckoutSession({
+      customerId,
+      priceAmountOre: testPackage.priceAmountOre,
+      priceCurrency: testPackage.priceCurrency,
+      productName: testPackage.name,
+      successUrl,
+      cancelUrl,
+      metadata: {
+        type: "lab_test",
+        userId: userId.toString(),
+        testPackageId: testPackage.id,
+        orderId: order._id!.toString(),
+      },
+    });
+
+    // Store checkout session ID on the order
+    order.stripeCheckoutSessionId = session.id;
+    await order.save();
+
+    await req.auditLogger?.logSuccess(
+      "lab-test-create-checkout",
+      "CREATE",
+      order._id?.toString(),
+      { testPackageId, sessionId: session.id }
+    );
+
+    res.status(200).json({
+      success: true,
+      sessionId: session.id,
+      url: session.url,
+      orderId: order._id!.toString(),
+    });
+  } catch (error) {
+    console.error("Error creating lab test checkout session:", error);
+    await req.auditLogger?.logFailure("lab-test-create-checkout", "CREATE", error);
+    res.status(500).json({ success: false, message: "Failed to create checkout session" });
+  }
+};
+
+// ============================================================================
 // Sync order statuses and results from Giddir
 // ============================================================================
 
@@ -166,6 +300,8 @@ async function syncPendingOrders(patientId: string): Promise<void> {
   const pendingOrders = await LabTestOrder.find({
     patient: patientId,
     status: { $nin: TERMINAL_STATUSES },
+    // Don't try to sync unpaid draft orders — they have no Giddir data yet
+    paymentStatus: { $ne: "pending_payment" },
   });
 
   if (pendingOrders.length === 0) return;
@@ -177,7 +313,9 @@ async function syncPendingOrders(patientId: string): Promise<void> {
       try {
         const data = order.giddirServiceRequestId
           ? await fetchLabResults(order.giddirServiceRequestId)
-          : await fetchLabResultsByTrackingId(order.externalTrackingId);
+          : order.externalTrackingId
+            ? await fetchLabResultsByTrackingId(order.externalTrackingId)
+            : null;
 
         if (!data) return;
 
@@ -244,7 +382,15 @@ export const getOrders = async (req: AuthenticatedRequest, res: Response) => {
     );
 
     const statusFilter = req.query.status as string | undefined;
-    const query: Record<string, unknown> = { patient: userId };
+    const query: Record<string, unknown> = {
+      patient: userId,
+      // Hide orders that haven't been paid yet (draft checkout sessions).
+      // Legacy orders without paymentStatus ($exists: false) are still shown.
+      $or: [
+        { paymentStatus: { $exists: false } },
+        { paymentStatus: { $ne: "pending_payment" } },
+      ],
+    };
     if (statusFilter) {
       query.status = statusFilter;
     }
@@ -298,7 +444,7 @@ export const getOrderById = async (req: AuthenticatedRequest, res: Response) => 
         let data = orderDoc.giddirServiceRequestId
           ? await fetchLabResults(orderDoc.giddirServiceRequestId)
           : null;
-        if (!data) {
+        if (!data && orderDoc.externalTrackingId) {
           data = await fetchLabResultsByTrackingId(orderDoc.externalTrackingId);
         }
 

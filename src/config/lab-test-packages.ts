@@ -21,5 +21,7 @@ export const LAB_TEST_PACKAGES: LabTestPackage[] = [
       { code: "ALAT", name: "ALAT (liver)", nameSv: "ALAT (lever)" },
       { code: "ASAT", name: "ASAT (liver)", nameSv: "ASAT (lever)" },
     ],
+    priceAmountOre: 29900,
+    priceCurrency: "sek",
   },
 ];

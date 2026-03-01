@@ -200,7 +200,15 @@ export type LabTestPackage = {
   description: string;
   descriptionSv: string;
   analyses: LabTestAnalysis[];
+  priceAmountOre: number;
+  priceCurrency: string;
 };
+
+// ============================================================================
+// Lab Test Payment
+// ============================================================================
+
+export type LabTestPaymentStatus = "pending_payment" | "paid" | "payment_failed";
 
 // ============================================================================
 // Lab Test Order (MongoDB Document Type)
@@ -215,7 +223,7 @@ export type LabTestOrderT = {
   _id?: Types.ObjectId;
   patient: Types.ObjectId;
   giddirServiceRequestId?: string;
-  externalTrackingId: string;
+  externalTrackingId?: string;
   testPackage: {
     id: string;
     productCode: string;
@@ -223,6 +231,9 @@ export type LabTestOrderT = {
     nameSv: string;
   };
   status: GiddirSubStatus;
+  paymentStatus?: LabTestPaymentStatus;
+  stripeCheckoutSessionId?: string;
+  stripePaymentIntentId?: string;
   statusHistory: LabTestStatusHistoryEntry[];
   results: LabTestResult[];
   orderedAt: Date;
@@ -253,6 +264,12 @@ export type GetLabTestOrdersResponse = {
 export type GetLabTestOrderResponse = {
   success: boolean;
   order: LabTestOrderT;
+};
+
+export type CreateLabTestCheckoutResponse = {
+  sessionId: string;
+  url: string;
+  orderId: string;
 };
 
 export type GetLabTestPackagesResponse = {

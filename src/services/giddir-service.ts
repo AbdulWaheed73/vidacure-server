@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import axios from "axios";
 import { decryptSSN } from "./auth-service";
 import {
   GiddirCachedToken,
@@ -8,6 +9,8 @@ import {
   GiddirSubStatus,
   FhirServiceRequestResource,
 } from "../types/giddir-types";
+
+const GIDDIR_TIMEOUT = 30000; // 30 seconds
 
 const GIDDIR_BASE_URL = process.env.GIDDIR_BASE_URL || "";
 const GIDDIR_USERNAME = process.env.GIDDIR_USERNAME || "";
@@ -25,24 +28,18 @@ let authPromise: Promise<GiddirCachedToken> | null = null;
 // ============================================================================
 
 async function authenticate(): Promise<GiddirCachedToken> {
-  const response = await fetch(`${GIDDIR_BASE_URL}/api/login/GIDDIR2`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-giddir-app": GIDDIR_APP_ID,
-    },
-    body: JSON.stringify({
-      UserName: GIDDIR_USERNAME,
-      Password: GIDDIR_PASSWORD,
-    }),
-  });
+  const { data: json } = await axios.post(
+    `${GIDDIR_BASE_URL}/api/login/GIDDIR2`,
+    { UserName: GIDDIR_USERNAME, Password: GIDDIR_PASSWORD },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "x-giddir-app": GIDDIR_APP_ID,
+      },
+      timeout: GIDDIR_TIMEOUT,
+    }
+  );
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Giddir authentication failed (${response.status}): ${text}`);
-  }
-
-  const json = await response.json();
   const loginData = json.data || json;
   console.log("Giddir login response:", JSON.stringify({
     email: loginData.email,
@@ -103,21 +100,33 @@ async function getAuthToken(): Promise<string> {
 // Generic API Request Helper
 // ============================================================================
 
+type GiddirRequestOptions = {
+  method?: string;
+  body?: string;
+  headers?: Record<string, string>;
+};
+
+type GiddirResponse = {
+  ok: boolean;
+  status: number;
+  text: () => Promise<string>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  json: () => Promise<any>;
+};
+
 async function makeGiddirRequest(
   endpoint: string,
-  options: RequestInit = {},
+  options: GiddirRequestOptions = {},
   retried = false
-): Promise<Response> {
+): Promise<GiddirResponse> {
   const token = await getAuthToken();
   const method = (options.method || "GET").toUpperCase();
 
-  // Send both Authorization and Cookie headers for all requests
-  // (Endpoint 6 in docs uses both; some GET endpoints need Cookie, POST needs Bearer)
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     Cookie: `Token=${token}`,
     "x-giddir-app": GIDDIR_APP_ID,
-    ...(options.headers as Record<string, string> || {}),
+    ...(options.headers || {}),
   };
 
   if (method !== "GET") {
@@ -127,19 +136,37 @@ async function makeGiddirRequest(
   const url = `${GIDDIR_BASE_URL}${endpoint}`;
   console.log(`🔗 Giddir request: ${method} ${url}`);
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  try {
+    const res = await axios({
+      url,
+      method,
+      headers,
+      data: options.body ? JSON.parse(options.body) : undefined,
+      timeout: GIDDIR_TIMEOUT,
+      validateStatus: () => true, // don't throw on non-2xx
+    });
 
-  // Retry once on 401
-  if (response.status === 401 && !retried) {
-    console.log("⚠️ Giddir token expired, re-authenticating...");
-    cachedToken = null;
-    return makeGiddirRequest(endpoint, options, true);
+    const response: GiddirResponse = {
+      ok: res.status >= 200 && res.status < 300,
+      status: res.status,
+      text: async () => typeof res.data === "string" ? res.data : JSON.stringify(res.data),
+      json: async () => res.data,
+    };
+
+    // Retry once on 401
+    if (response.status === 401 && !retried) {
+      console.log("⚠️ Giddir token expired, re-authenticating...");
+      cachedToken = null;
+      return makeGiddirRequest(endpoint, options, true);
+    }
+
+    return response;
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.code === "ECONNABORTED") {
+      throw new Error(`Giddir request timed out after ${GIDDIR_TIMEOUT / 1000}s: ${method} ${endpoint}`);
+    }
+    throw err;
   }
-
-  return response;
 }
 
 // ============================================================================

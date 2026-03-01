@@ -106,6 +106,39 @@ export const stripeService = {
     return await stripe.checkout.sessions.create(sessionParams);
   },
 
+  createLabTestCheckoutSession: async (params: {
+    customerId: string;
+    priceAmountOre: number;
+    priceCurrency: string;
+    productName: string;
+    successUrl: string;
+    cancelUrl: string;
+    metadata: Record<string, string>;
+  }) => {
+    const { customerId, priceAmountOre, priceCurrency, productName, successUrl, cancelUrl, metadata } = params;
+
+    return await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      customer: customerId,
+      line_items: [
+        {
+          price_data: {
+            currency: priceCurrency,
+            unit_amount: priceAmountOre,
+            product_data: {
+              name: productName,
+            },
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata,
+    });
+  },
+
   retrieveSession: async (sessionId: string) => {
     return await stripe.checkout.sessions.retrieve(sessionId, {
       expand: ['subscription', 'customer'],

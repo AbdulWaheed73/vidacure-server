@@ -15,7 +15,9 @@ import {
   handleSubscriptionUpdate,
   handleSubscriptionDeleted,
   handlePaymentIntentSucceeded,
-  handleSetupIntentSucceeded
+  handleSetupIntentSucceeded,
+  handleLabTestPaymentCompleted,
+  handleLabTestSessionExpired,
 } from "../controllers/payment-controllers";
 import { submitCancellationFeedback } from "../controllers/cancellation-feedback-controller";
 import { requireAuth, requireCSRF, requireRole } from "../middleware/auth-middleware";
@@ -60,13 +62,19 @@ router.post("/webhook", express.raw({ type: 'application/json' }), async (req: e
         const session = event.data.object;
         if (session.mode === 'subscription') {
           await handleSuccessfulPayment(session);
+        } else if (session.mode === 'payment' && session.metadata?.type === 'lab_test') {
+          await handleLabTestPaymentCompleted(session);
         }
         break;
       }
 
       case 'checkout.session.expired': {
         const session = event.data.object;
-        await handleFailedPayment(session);
+        if (session.metadata?.type === 'lab_test') {
+          await handleLabTestSessionExpired(session);
+        } else {
+          await handleFailedPayment(session);
+        }
         break;
       }
 

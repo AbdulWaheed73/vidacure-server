@@ -66,9 +66,16 @@ const labTestOrderSchema = new Schema(
     giddirServiceRequestId: { type: String },
     externalTrackingId: {
       type: String,
-      required: true,
       unique: true,
+      sparse: true,
     },
+    paymentStatus: {
+      type: String,
+      enum: ["pending_payment", "paid", "payment_failed"],
+      default: "pending_payment",
+    },
+    stripeCheckoutSessionId: { type: String },
+    stripePaymentIntentId: { type: String },
     testPackage: {
       id: { type: String, required: true },
       productCode: { type: String, required: true },
@@ -95,6 +102,9 @@ labTestOrderSchema.index({ patient: 1, status: 1 });
 
 // Index for webhook lookups by Giddir service request ID
 labTestOrderSchema.index({ giddirServiceRequestId: 1 });
+
+// Index for Stripe checkout session lookups
+labTestOrderSchema.index({ stripeCheckoutSessionId: 1 }, { sparse: true });
 
 const LabTestOrder = mongoose.model<LabTestOrderDocument>(
   "LabTestOrder",

@@ -2,8 +2,10 @@ import express from "express";
 import stripeService from "../services/stripe-service";
 import PatientSchema from "../schemas/patient-schema";
 import CancellationFeedbackSchema from "../schemas/cancellation-feedback-schema";
+import LabTestOrder from "../schemas/lab-test-order-schema";
 import Stripe from "stripe";
 import { assignDoctorRoundRobin } from "../services/doctor-assignment-service";
+import { placeLabTestOrderForPatient } from "../services/lab-test-order-service";
 import type { CancellationReason } from "../types/cancellation-feedback-type";
 
 // Helper to get frontend URL without trailing slash
@@ -1078,6 +1080,88 @@ export const handlePaymentIntentSucceeded = async (
       customerId: paymentIntent?.customer,
       planType: paymentIntent?.metadata?.planType,
       createSubscription: paymentIntent?.metadata?.createSubscription,
+    });
+  }
+};
+
+// ============================================================================
+// Lab Test Payment Handlers
+// ============================================================================
+
+export const handleLabTestPaymentCompleted = async (
+  session: Stripe.Checkout.Session
+) => {
+  try {
+    console.log("Processing lab test payment for session:", session.id);
+
+    const userId = session.metadata?.userId;
+    const testPackageId = session.metadata?.testPackageId;
+    const orderId = session.metadata?.orderId;
+
+    if (!userId || !testPackageId || !orderId) {
+      console.error("Missing required metadata in lab test checkout session");
+      return;
+    }
+
+    // Find the pending order
+    const order = await LabTestOrder.findById(orderId);
+    if (!order) {
+      console.error("Lab test order not found:", orderId);
+      return;
+    }
+
+    // Idempotency: skip if already paid
+    if (order.paymentStatus === "paid") {
+      console.log("Lab test order already paid, skipping:", orderId);
+      return;
+    }
+
+    // Update payment status
+    order.paymentStatus = "paid";
+    order.stripePaymentIntentId = session.payment_intent as string;
+    await order.save();
+
+    // Place the Giddir order
+    try {
+      await placeLabTestOrderForPatient(userId, testPackageId, orderId);
+      console.log("Successfully placed Giddir order for lab test:", orderId);
+    } catch (giddirError) {
+      // Payment succeeded but Giddir failed — log for manual intervention
+      logCriticalWebhookError("handleLabTestPaymentCompleted - Giddir placement failed", giddirError, {
+        sessionId: session.id,
+        orderId,
+        userId,
+        testPackageId,
+      });
+      // Order keeps paymentStatus: "paid" so admin can manually retry
+    }
+  } catch (error) {
+    logCriticalWebhookError("handleLabTestPaymentCompleted", error, {
+      sessionId: session?.id,
+      customerId: session?.customer,
+    });
+  }
+};
+
+export const handleLabTestSessionExpired = async (
+  session: Stripe.Checkout.Session
+) => {
+  try {
+    const orderId = session.metadata?.orderId;
+    if (!orderId) return;
+
+    const order = await LabTestOrder.findById(orderId);
+    if (!order) return;
+
+    if (order.paymentStatus === "paid") return; // Already processed
+
+    order.paymentStatus = "payment_failed";
+    await order.save();
+
+    console.log("Lab test checkout session expired, order marked as payment_failed:", orderId);
+  } catch (error) {
+    logCriticalWebhookError("handleLabTestSessionExpired", error, {
+      sessionId: session?.id,
     });
   }
 };
