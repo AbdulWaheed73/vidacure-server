@@ -60,7 +60,6 @@ router.post("/webhook", express.raw({ type: 'application/json' }), async (req: e
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object;
-        console.log('Checkout session completed — mode:', session.mode, 'metadata:', JSON.stringify(session.metadata));
         if (session.mode === 'subscription') {
           await handleSuccessfulPayment(session);
         } else if (session.mode === 'payment' && session.metadata?.type === 'lab_test') {
