@@ -20,6 +20,9 @@ import {
   calendlyLookup,
   getAuditLogs,
   getAuditAnomalies,
+  createPromotion,
+  listPromotions,
+  deactivatePromotion,
 } from "../controllers/admin-controllers";
 
 const router = express.Router();
@@ -65,6 +68,11 @@ router.delete("/providers/:providerId", deactivateProvider);
 router.post("/provider-tier-override", setProviderTierOverride);
 router.post("/remove-provider-tier-override", removeProviderTierOverride);
 router.get("/patients/:patientId/provider-tiers", getPatientProviderTiers);
+
+// Promotion / Coupon management
+router.post("/promotions", createPromotion);
+router.get("/promotions", listPromotions);
+router.post("/promotions/:promoCodeId/deactivate", deactivatePromotion);
 
 // Calendly lookup
 router.post("/calendly-lookup", calendlyLookup);

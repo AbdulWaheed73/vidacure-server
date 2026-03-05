@@ -1,6 +1,7 @@
 import { Response } from "express";
 import { AuthenticatedRequest } from "../types/generic-types";
 import { LAB_TEST_PACKAGES } from "../config/lab-test-packages";
+import { DRAFT_ORDER_TTL_MS } from "../config/time-constants";
 import LabTestOrder from "../schemas/lab-test-order-schema";
 import Patient from "../schemas/patient-schema";
 import {
@@ -223,7 +224,7 @@ export const createLabTestCheckoutSession = async (
       await patient.save();
     }
 
-    // Create a pending LabTestOrder
+    // Create a pending LabTestOrder (auto-deleted after 24h if payment never completes)
     const order = new LabTestOrder({
       patient: userId,
       testPackage: {
@@ -236,6 +237,7 @@ export const createLabTestCheckoutSession = async (
       paymentStatus: "pending_payment",
       statusHistory: [{ status: "draft", timestamp: new Date() }],
       results: [],
+      draftExpiresAt: new Date(Date.now() + DRAFT_ORDER_TTL_MS),
     });
 
     await order.save();
@@ -384,12 +386,9 @@ export const getOrders = async (req: AuthenticatedRequest, res: Response) => {
     const statusFilter = req.query.status as string | undefined;
     const query: Record<string, unknown> = {
       patient: userId,
-      // Hide orders that haven't been paid yet (draft checkout sessions).
-      // Legacy orders without paymentStatus ($exists: false) are still shown.
-      $or: [
-        { paymentStatus: { $exists: false } },
-        { paymentStatus: { $ne: "pending_payment" } },
-      ],
+      // Never show draft orders to patients — drafts are temporary checkout placeholders.
+      // Only paid/placed orders (status != "draft") should appear in "My Orders".
+      status: { $ne: "draft" },
     };
     if (statusFilter) {
       query.status = statusFilter;

@@ -1,4 +1,5 @@
 import express from "express";
+import Stripe from "stripe";
 import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
 import ProviderSchema from "../schemas/provider-schema";
@@ -890,6 +891,173 @@ export const calendlyLookup = async (req: AdminAuthenticatedRequest, res: expres
   } catch (error: any) {
     await auditAdminAction(req, 'admin_calendly_lookup', 'READ', false, undefined, undefined, error);
     res.status(500).json({ error: error.message });
+  }
+};
+
+// ============ Promotion / Coupon Management ============
+
+/**
+ * Create a coupon + promotion code in Stripe
+ * POST /api/admin/promotions
+ * Body: { code, name, discountType, percentOff?, amountOff?, duration, durationInMonths?, maxRedemptions?, expiresAt? }
+ */
+export const createPromotion = async (req: AdminAuthenticatedRequest, res: express.Response) => {
+  try {
+    const { code, name, discountType, percentOff, amountOff, duration, durationInMonths, maxRedemptions, expiresAt, appliesTo } = req.body;
+
+    if (!code || !name || !discountType || !duration) {
+      return res.status(400).json({ error: 'code, name, discountType, and duration are required' });
+    }
+
+    const validAppliesTo = ['all', 'subscriptions', 'lab_tests'];
+    const resolvedAppliesTo = validAppliesTo.includes(appliesTo) ? appliesTo : 'all';
+
+    if (discountType === 'percent' && (!percentOff || percentOff < 1 || percentOff > 100)) {
+      return res.status(400).json({ error: 'percentOff must be between 1 and 100' });
+    }
+
+    if (discountType === 'fixed' && (!amountOff || amountOff < 1)) {
+      return res.status(400).json({ error: 'amountOff must be a positive number (SEK)' });
+    }
+
+    if (duration === 'repeating' && (!durationInMonths || durationInMonths < 1)) {
+      return res.status(400).json({ error: 'durationInMonths is required for repeating duration' });
+    }
+
+    // Resolve product restrictions based on appliesTo (set on coupon, not promo code)
+    let appliesToProductIds: string[] | undefined;
+    if (resolvedAppliesTo === 'subscriptions') {
+      appliesToProductIds = await stripeService.getSubscriptionProductIds();
+    }
+    // Note: 'lab_tests' uses metadata label only — Stripe can't restrict to inline products
+
+    // Create the coupon in Stripe (with product restriction if applicable)
+    const coupon = await stripeService.createCoupon({
+      name,
+      percentOff: discountType === 'percent' ? percentOff : undefined,
+      amountOff: discountType === 'fixed' ? Math.round(amountOff * 100) : undefined, // Convert SEK to öre
+      currency: discountType === 'fixed' ? 'sek' : undefined,
+      duration,
+      durationInMonths: duration === 'repeating' ? durationInMonths : undefined,
+      maxRedemptions: maxRedemptions || undefined,
+      appliesToProductIds,
+    });
+
+    // Create the promotion code referencing the coupon
+    const promoCode = await stripeService.createPromotionCode({
+      couponId: coupon.id,
+      code: code.toUpperCase(),
+      maxRedemptions: maxRedemptions || undefined,
+      expiresAt: expiresAt ? Math.floor(new Date(expiresAt).getTime() / 1000) : undefined,
+      metadata: { appliesTo: resolvedAppliesTo },
+    });
+
+    await auditAdminAction(req, 'admin_create_promotion', 'CREATE', true, undefined, { code: promoCode.code, couponId: coupon.id, appliesTo: resolvedAppliesTo });
+
+    res.status(201).json({
+      message: 'Promotion code created successfully',
+      promotion: {
+        id: promoCode.id,
+        code: promoCode.code,
+        active: promoCode.active,
+        coupon: {
+          id: coupon.id,
+          name: coupon.name,
+          percentOff: coupon.percent_off,
+          amountOff: coupon.amount_off ? coupon.amount_off / 100 : null, // Convert öre back to SEK
+          currency: coupon.currency,
+          duration: coupon.duration,
+          durationInMonths: coupon.duration_in_months,
+          valid: coupon.valid,
+        },
+        maxRedemptions: promoCode.max_redemptions,
+        timesRedeemed: promoCode.times_redeemed,
+        expiresAt: promoCode.expires_at ? new Date(promoCode.expires_at * 1000).toISOString() : null,
+        created: new Date(promoCode.created * 1000).toISOString(),
+        appliesTo: resolvedAppliesTo,
+      },
+    });
+  } catch (error: any) {
+    await auditAdminAction(req, 'admin_create_promotion', 'CREATE', false, undefined, undefined, error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+};
+
+/**
+ * List promotion codes from Stripe with cursor pagination
+ * GET /api/admin/promotions?active=true&startingAfter=xxx&limit=25
+ */
+export const listPromotions = async (req: AdminAuthenticatedRequest, res: express.Response) => {
+  try {
+    const active = req.query.active !== undefined ? req.query.active === 'true' : undefined;
+    const startingAfter = req.query.startingAfter as string | undefined;
+    const limit = parseInt(req.query.limit as string) || 25;
+
+    const result = await stripeService.listPromotionCodes({
+      active,
+      startingAfter,
+      limit,
+    });
+
+    const promotions = result.data.map((pc) => {
+      const coupon = pc.coupon as Stripe.Coupon;
+      return {
+        id: pc.id,
+        code: pc.code,
+        active: pc.active,
+        coupon: {
+          id: coupon.id,
+          name: coupon.name,
+          percentOff: coupon.percent_off,
+          amountOff: coupon.amount_off ? coupon.amount_off / 100 : null,
+          currency: coupon.currency,
+          duration: coupon.duration,
+          durationInMonths: coupon.duration_in_months,
+          valid: coupon.valid,
+        },
+        maxRedemptions: pc.max_redemptions,
+        timesRedeemed: pc.times_redeemed,
+        expiresAt: pc.expires_at ? new Date(pc.expires_at * 1000).toISOString() : null,
+        created: new Date(pc.created * 1000).toISOString(),
+        appliesTo: (pc.metadata?.appliesTo as string) || 'all',
+      };
+    });
+
+    await auditAdminAction(req, 'admin_list_promotions', 'READ', true, undefined, { count: promotions.length });
+
+    res.json({
+      promotions,
+      hasMore: result.has_more,
+    });
+  } catch (error: any) {
+    await auditAdminAction(req, 'admin_list_promotions', 'READ', false, undefined, undefined, error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Deactivate a promotion code in Stripe
+ * POST /api/admin/promotions/:promoCodeId/deactivate
+ */
+export const deactivatePromotion = async (req: AdminAuthenticatedRequest, res: express.Response) => {
+  try {
+    const { promoCodeId } = req.params;
+
+    const updated = await stripeService.deactivatePromotionCode(promoCodeId);
+
+    await auditAdminAction(req, 'admin_deactivate_promotion', 'UPDATE', true, undefined, { promoCodeId, code: updated.code });
+
+    res.json({
+      message: 'Promotion code deactivated successfully',
+      promotion: {
+        id: updated.id,
+        code: updated.code,
+        active: updated.active,
+      },
+    });
+  } catch (error: any) {
+    await auditAdminAction(req, 'admin_deactivate_promotion', 'UPDATE', false, undefined, undefined, error);
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 };
 

@@ -91,6 +91,9 @@ const labTestOrderSchema = new Schema(
     results: [labTestResultSchema],
     orderedAt: { type: Date, default: Date.now },
     completedAt: { type: Date },
+    // TTL field: MongoDB auto-deletes the document when this date passes.
+    // Only set on draft orders (cleared when payment succeeds).
+    draftExpiresAt: { type: Date },
   },
   {
     timestamps: true,
@@ -105,6 +108,9 @@ labTestOrderSchema.index({ giddirServiceRequestId: 1 });
 
 // Index for Stripe checkout session lookups
 labTestOrderSchema.index({ stripeCheckoutSessionId: 1 }, { sparse: true });
+
+// TTL index: auto-delete abandoned draft orders after 24 hours
+labTestOrderSchema.index({ draftExpiresAt: 1 }, { expireAfterSeconds: 0, sparse: true });
 
 const LabTestOrder = mongoose.model<LabTestOrderDocument>(
   "LabTestOrder",

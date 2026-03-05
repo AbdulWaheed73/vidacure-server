@@ -238,6 +238,7 @@ export type LabTestOrderT = {
   results: LabTestResult[];
   orderedAt: Date;
   completedAt?: Date;
+  draftExpiresAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 };

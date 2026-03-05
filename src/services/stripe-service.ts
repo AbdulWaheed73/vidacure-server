@@ -18,9 +18,31 @@ const getPriceId = (planType: 'lifestyle' | 'medical'): string => {
   return priceId;
 };
 
+// Cache for subscription product IDs (resolved from price IDs)
+let subscriptionProductIds: string[] | null = null;
+
+const getSubscriptionProductIds = async (): Promise<string[]> => {
+  if (subscriptionProductIds) return subscriptionProductIds;
+
+  const ids: string[] = [];
+  for (const planType of ['lifestyle', 'medical'] as const) {
+    try {
+      const priceId = getPriceId(planType);
+      const price = await stripe.prices.retrieve(priceId);
+      const productId = typeof price.product === 'string' ? price.product : price.product.id;
+      if (!ids.includes(productId)) ids.push(productId);
+    } catch {
+      // Skip if price not configured
+    }
+  }
+  subscriptionProductIds = ids;
+  return ids;
+};
+
 export const stripeService = {
   stripe,
   getPriceId,
+  getSubscriptionProductIds,
 
   createCustomer: async (email: string, name: string, metadata?: Record<string, string>) => {
     return await stripe.customers.create({
@@ -93,7 +115,7 @@ export const stripeService = {
         planType,
         ...metadata,
       },
-      // allow_promotion_codes: true,
+      allow_promotion_codes: true,
       // billing_address_collection: 'required',
     };
 
@@ -136,6 +158,7 @@ export const stripeService = {
       success_url: successUrl,
       cancel_url: cancelUrl,
       metadata,
+      allow_promotion_codes: true,
     });
   },
 
@@ -275,6 +298,79 @@ export const stripeService = {
       type: 'card',
     });
     return paymentMethods.data;
+  },
+
+  // ============ Coupon & Promotion Code Management ============
+
+  createCoupon: async (params: {
+    name: string;
+    percentOff?: number;
+    amountOff?: number;
+    currency?: string;
+    duration: 'once' | 'repeating' | 'forever';
+    durationInMonths?: number;
+    maxRedemptions?: number;
+    appliesToProductIds?: string[];
+  }) => {
+    const couponParams: Stripe.CouponCreateParams = {
+      name: params.name,
+      duration: params.duration,
+    };
+    if (params.percentOff) couponParams.percent_off = params.percentOff;
+    if (params.amountOff) {
+      couponParams.amount_off = params.amountOff;
+      couponParams.currency = params.currency || 'sek';
+    }
+    if (params.duration === 'repeating' && params.durationInMonths) {
+      couponParams.duration_in_months = params.durationInMonths;
+    }
+    if (params.maxRedemptions) couponParams.max_redemptions = params.maxRedemptions;
+    if (params.appliesToProductIds && params.appliesToProductIds.length > 0) {
+      couponParams.applies_to = { products: params.appliesToProductIds };
+    }
+
+    return await stripe.coupons.create(couponParams);
+  },
+
+  createPromotionCode: async (params: {
+    couponId: string;
+    code: string;
+    maxRedemptions?: number;
+    expiresAt?: number;
+    metadata?: Record<string, string>;
+  }) => {
+    const promoParams: Stripe.PromotionCodeCreateParams = {
+      coupon: params.couponId,
+      code: params.code,
+    };
+    if (params.maxRedemptions) promoParams.max_redemptions = params.maxRedemptions;
+    if (params.expiresAt) promoParams.expires_at = params.expiresAt;
+    if (params.metadata) promoParams.metadata = params.metadata;
+
+    return await stripe.promotionCodes.create(promoParams);
+  },
+
+  listPromotionCodes: async (params?: {
+    active?: boolean;
+    limit?: number;
+    startingAfter?: string;
+  }) => {
+    return await stripe.promotionCodes.list({
+      active: params?.active,
+      limit: params?.limit || 25,
+      starting_after: params?.startingAfter,
+      expand: ['data.coupon'],
+    });
+  },
+
+  retrievePromotionCode: async (id: string) => {
+    return await stripe.promotionCodes.retrieve(id, {
+      expand: ['coupon'],
+    });
+  },
+
+  deactivatePromotionCode: async (id: string) => {
+    return await stripe.promotionCodes.update(id, { active: false });
   },
 
   /**

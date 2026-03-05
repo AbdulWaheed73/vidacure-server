@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth, requireCSRF, requireRole, requireActiveSubscription } from '../middleware/auth-middleware';
+import { requireConsent } from '../middleware/consent-middleware';
 import { auditMiddleware } from '../middleware/audit-middleware';
 import {
   getSupabaseChatToken,
@@ -23,7 +24,7 @@ const router = Router();
 router.post('/token', requireAuth, auditMiddleware, requireCSRF, getSupabaseChatToken);
 
 // Patient routes - require active subscription for chat access
-router.get('/conversation', requireAuth, auditMiddleware, requireRole('patient'), requireActiveSubscription, getPatientConversation);
+router.get('/conversation', requireAuth, auditMiddleware, requireRole('patient'), requireActiveSubscription, requireConsent, getPatientConversation);
 
 // Unread counts - any authenticated user
 router.get('/unread-counts', requireAuth, auditMiddleware, getUnreadCounts);

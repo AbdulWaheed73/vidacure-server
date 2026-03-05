@@ -1116,9 +1116,10 @@ export const handleLabTestPaymentCompleted = async (
       return;
     }
 
-    // Update payment status
+    // Update payment status and clear TTL so paid orders aren't auto-deleted
     order.paymentStatus = "paid";
     order.stripePaymentIntentId = session.payment_intent as string;
+    order.draftExpiresAt = undefined;
     await order.save();
 
     // Place the Giddir order
@@ -1155,10 +1156,10 @@ export const handleLabTestSessionExpired = async (
 
     if (order.paymentStatus === "paid") return; // Already processed
 
-    order.paymentStatus = "payment_failed";
-    await order.save();
+    // Delete unpaid draft orders — they should not persist in the patient's portal
+    await LabTestOrder.findByIdAndDelete(orderId);
 
-    console.log("Lab test checkout session expired, order marked as payment_failed:", orderId);
+    console.log("Lab test checkout session expired, unpaid draft order deleted:", orderId);
   } catch (error) {
     logCriticalWebhookError("handleLabTestSessionExpired", error, {
       sessionId: session?.id,
