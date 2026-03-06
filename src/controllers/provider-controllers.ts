@@ -148,11 +148,19 @@ export const createProviderBookingLink = async (req: AuthenticatedRequest, res: 
 
     // Try to create link by configured name first, fall back to first available event type
     let bookingUrl: string;
-    try {
-      bookingUrl = await createSingleUseLink(eventTypeName || "Consultation", calendlyUserUri);
-    } catch {
-      // Name didn't match — get all event types and use the first active one
-      console.log(`Event type "${eventTypeName}" not found for provider ${provider.name}, falling back to first available`);
+    if (eventTypeName) {
+      try {
+        bookingUrl = await createSingleUseLink(eventTypeName, calendlyUserUri);
+      } catch {
+        // Name didn't match — fall through to fallback below
+        console.log(`Event type "${eventTypeName}" not found for provider ${provider.name}, falling back to first available`);
+        bookingUrl = "";
+      }
+    } else {
+      bookingUrl = "";
+    }
+
+    if (!bookingUrl) {
       const allEventTypes = await getCalendlyEventTypes(calendlyUserUri!);
       const activeEvent = allEventTypes.find(et => et.active);
       if (!activeEvent) {

@@ -3,11 +3,18 @@ import { AuthenticatedRequest } from '../types/generic-types';
 import consentService from '../services/consent-service';
 import { REQUIRED_CONSENT_TYPES } from '../config/consent-config';
 
+// Paths that are exempt from consent checks (e.g. onboarding must work before consent)
+const CONSENT_EXEMPT_PATHS = [
+  '/questionnaire',
+  '/profile',
+];
+
 /**
  * Middleware: block access to protected endpoints if required consents are missing.
  * When consent version is bumped in consent-config.ts, patients must re-consent.
  *
- * Exemptions: consent endpoints themselves, auth endpoints, health check.
+ * Exemptions: consent endpoints themselves, auth endpoints, health check,
+ * onboarding routes (questionnaire, profile).
  */
 export function requireConsent(
   req: AuthenticatedRequest,
@@ -16,6 +23,12 @@ export function requireConsent(
 ): void {
   // Only enforce for patients (doctors/admins don't need patient consent)
   if (!req.user || req.user.role !== 'patient') {
+    next();
+    return;
+  }
+
+  // Exempt onboarding-related paths so new patients can complete setup
+  if (CONSENT_EXEMPT_PATHS.some((p) => req.path.startsWith(p))) {
     next();
     return;
   }
