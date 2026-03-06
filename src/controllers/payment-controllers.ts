@@ -515,7 +515,7 @@ export const changePlan = async (
             price: newPriceId,
           },
         ],
-        proration_behavior: "create_prorations",
+        proration_behavior: "always_invoice",
       }
     );
 
