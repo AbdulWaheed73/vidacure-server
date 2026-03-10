@@ -305,6 +305,11 @@ export const createCheckoutSession = async (
       await patient.save();
     }
 
+    // Ensure Stripe customer has the patient's real email
+    if (patient.email) {
+      await stripeService.updateCustomer(customerId, { email: patient.email });
+    }
+
     const session = await stripeService.createCheckoutSession({
       customerId,
       planType,
@@ -502,39 +507,101 @@ export const changePlan = async (
       return res.status(400).json({ error: "No subscription item found" });
     }
 
-    // Get the new price ID
     const newPriceId = stripeService.getPriceId(planType);
+    const isUpgrade = patient.subscription.planType === "lifestyle" && planType === "medical";
 
-    // Update the subscription with the new price (prorates by default)
-    const updatedSubscription = await stripeService.updateSubscription(
+    if (isUpgrade) {
+      // Calculate proration amount via invoice preview
+      const prorationDate = Math.floor(Date.now() / 1000);
+      const preview = await stripeService.stripe.invoices.createPreview({
+        customer: patient.subscription.stripeCustomerId,
+        subscription: patient.subscription.stripeSubscriptionId,
+        subscription_details: {
+          items: [{ id: currentItemId, price: newPriceId }],
+          proration_date: prorationDate,
+          proration_behavior: "create_prorations",
+        },
+      });
+
+      const prorationAmount = preview.amount_due; // in öre (smallest currency unit)
+
+      if (prorationAmount > 0) {
+        // Create a one-time payment checkout for the proration difference
+        const frontendUrl = getFrontendUrl();
+        if (!frontendUrl) {
+          return res.status(500).json({ error: "Server configuration error" });
+        }
+
+        // Ensure Stripe customer has the patient's real email
+        if (patient.email) {
+          await stripeService.updateCustomer(patient.subscription.stripeCustomerId, {
+            email: patient.email,
+          });
+        }
+
+        const session = await stripeService.stripe.checkout.sessions.create({
+          payment_method_types: ["card"],
+          mode: "payment",
+          customer: patient.subscription.stripeCustomerId,
+          line_items: [
+            {
+              price_data: {
+                currency: "sek",
+                unit_amount: prorationAmount,
+                product_data: {
+                  name: "Upgrade to Medical Program (prorated)",
+                },
+              },
+              quantity: 1,
+            },
+          ],
+          success_url: `${frontendUrl}/account?plan_changed=true`,
+          cancel_url: `${frontendUrl}/account`,
+          metadata: {
+            type: "plan_change",
+            userId: userId.toString(),
+            newPlanType: planType,
+            subscriptionId: patient.subscription.stripeSubscriptionId,
+            subscriptionItemId: currentItemId,
+            newPriceId,
+          },
+        });
+
+        return res.json({ checkoutUrl: session.url });
+      }
+
+      // Proration is 0 (e.g. same-day change) — update directly
+      const updated = await stripeService.updateSubscription(
+        patient.subscription.stripeSubscriptionId,
+        {
+          items: [{ id: currentItemId, price: newPriceId }],
+          proration_behavior: "none",
+        }
+      );
+
+      patient.subscription.planType = planType;
+      patient.subscription.stripePriceId = newPriceId;
+      patient.subscription.stripeProductId = updated.items.data[0].price.product as string;
+      await patient.save();
+
+      return res.json({ message: "Plan changed successfully" });
+    }
+
+    // Downgrade: update subscription directly, credit applied to next invoice
+    const updated = await stripeService.updateSubscription(
       patient.subscription.stripeSubscriptionId,
       {
-        items: [
-          {
-            id: currentItemId,
-            price: newPriceId,
-          },
-        ],
-        proration_behavior: "always_invoice",
+        items: [{ id: currentItemId, price: newPriceId }],
+        proration_behavior: "create_prorations",
       }
     );
 
-    // Update patient record
-    if (patient.subscription) {
-      patient.subscription.planType = planType;
-      patient.subscription.stripePriceId = newPriceId;
-      patient.subscription.stripeProductId = updatedSubscription.items.data[0].price.product as string;
-    }
+    patient.subscription.planType = planType;
+    patient.subscription.stripePriceId = newPriceId;
+    patient.subscription.stripeProductId = updated.items.data[0].price.product as string;
     await patient.save();
 
-    res.json({
-      message: "Plan changed successfully",
-      subscription: {
-        id: updatedSubscription.id,
-        status: updatedSubscription.status,
-        planType,
-      },
-    });
+    res.json({ message: "Plan changed successfully" });
   } catch (error: any) {
     console.error("Error changing plan:", error);
     res.status(500).json({ error: error.message });
@@ -613,6 +680,42 @@ export const createPortalSession = async (
   } catch (error: any) {
     console.error("Error creating portal session:", error);
     res.status(500).json({ error: error.message });
+  }
+};
+
+export const handlePlanChangeCompleted = async (
+  session: Stripe.Checkout.Session
+) => {
+  try {
+    console.log("Processing plan change payment for session:", session.id);
+
+    const { userId, newPlanType, subscriptionId, subscriptionItemId, newPriceId } =
+      session.metadata || {};
+
+    if (!userId || !newPlanType || !subscriptionId || !subscriptionItemId || !newPriceId) {
+      console.error("Missing metadata in plan change session:", session.metadata);
+      return;
+    }
+
+    // Update the subscription with no proration (already paid via checkout)
+    const updated = await stripeService.updateSubscription(subscriptionId, {
+      items: [{ id: subscriptionItemId, price: newPriceId }],
+      proration_behavior: "none",
+    });
+
+    // Update patient record
+    const patient = await PatientSchema.findById(userId);
+    if (patient?.subscription) {
+      patient.subscription.planType = newPlanType as "lifestyle" | "medical";
+      patient.subscription.stripePriceId = newPriceId;
+      patient.subscription.stripeProductId = updated.items.data[0].price.product as string;
+      await patient.save();
+      console.log("Plan change completed for patient:", userId, "→", newPlanType);
+    }
+  } catch (error) {
+    logCriticalWebhookError("handlePlanChangeCompleted", error, {
+      sessionId: session?.id,
+    });
   }
 };
 

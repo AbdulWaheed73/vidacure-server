@@ -18,6 +18,7 @@ import {
   handleSetupIntentSucceeded,
   handleLabTestPaymentCompleted,
   handleLabTestSessionExpired,
+  handlePlanChangeCompleted,
 } from "../controllers/payment-controllers";
 import { submitCancellationFeedback } from "../controllers/cancellation-feedback-controller";
 import { requireAuth, requireCSRF, requireRole } from "../middleware/auth-middleware";
@@ -62,6 +63,8 @@ router.post("/webhook", express.raw({ type: 'application/json' }), async (req: e
         const session = event.data.object;
         if (session.mode === 'subscription') {
           await handleSuccessfulPayment(session);
+        } else if (session.mode === 'payment' && session.metadata?.type === 'plan_change') {
+          await handlePlanChangeCompleted(session);
         } else if (session.mode === 'payment' && session.metadata?.type === 'lab_test') {
           await handleLabTestPaymentCompleted(session);
         }

@@ -174,15 +174,28 @@ export async function getDoctorPrescriptions(
     // Sort by creation date (newest first)
     allPrescriptionRequests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+    // Pagination
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 0));
+    const totalCount = allPrescriptionRequests.length;
+
+    const paginatedRequests = limit > 0
+      ? allPrescriptionRequests.slice((page - 1) * limit, page * limit)
+      : allPrescriptionRequests;
+
     res.json({
       success: true,
       data: {
-        prescriptionRequests: allPrescriptionRequests,
-        totalCount: allPrescriptionRequests.length,
+        prescriptionRequests: paginatedRequests,
+        totalCount,
         pendingCount: allPrescriptionRequests.filter(req => req.status === 'pending').length,
         approvedCount: allPrescriptionRequests.filter(req => req.status === 'approved').length,
         deniedCount: allPrescriptionRequests.filter(req => req.status === 'denied').length,
-        underReviewCount: allPrescriptionRequests.filter(req => req.status === 'under_review').length
+        underReviewCount: allPrescriptionRequests.filter(req => req.status === 'under_review').length,
+        page,
+        limit: limit || totalCount,
+        totalPages: limit > 0 ? Math.ceil(totalCount / limit) : 1,
+        hasMore: limit > 0 ? page * limit < totalCount : false
       }
     });
   } catch (error) {
