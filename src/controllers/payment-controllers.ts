@@ -6,6 +6,8 @@ import LabTestOrder from "../schemas/lab-test-order-schema";
 import Stripe from "stripe";
 import { assignDoctorRoundRobin } from "../services/doctor-assignment-service";
 import { placeLabTestOrderForPatient } from "../services/lab-test-order-service";
+import { sendLabTestOrderConfirmation } from "../services/email-service";
+import { LAB_TEST_PACKAGES } from "../config/lab-test-packages";
 import type { CancellationReason } from "../types/cancellation-feedback-type";
 
 // Helper to get frontend URL without trailing slash
@@ -1229,6 +1231,25 @@ export const handleLabTestPaymentCompleted = async (
     try {
       await placeLabTestOrderForPatient(userId, testPackageId, orderId);
       console.log("Successfully placed Giddir order for lab test:", orderId);
+
+      // Send confirmation email (fire-and-forget)
+      try {
+        const patient = await PatientSchema.findById(userId);
+        if (patient?.email) {
+          const pkg = LAB_TEST_PACKAGES.find((p) => p.id === testPackageId);
+          const price = pkg ? `${pkg.priceAmountOre / 100} SEK` : "299 SEK";
+          await sendLabTestOrderConfirmation({
+            to: patient.email,
+            patientName: patient.name || "Patient",
+            testPackageName: order.testPackage.name,
+            testPackageNameSv: order.testPackage.nameSv,
+            price,
+            orderedAt: order.orderedAt,
+          });
+        }
+      } catch (emailError) {
+        console.error("Failed to send lab test confirmation email (non-blocking):", emailError);
+      }
     } catch (giddirError) {
       // Payment succeeded but Giddir failed — log for manual intervention
       logCriticalWebhookError("handleLabTestPaymentCompleted - Giddir placement failed", giddirError, {

@@ -10,6 +10,7 @@ import {
   updateProfile,
   getAccessLog
 } from "../controllers/patient-controllers";
+import { getPatientTreatmentJournal } from "../controllers/treatment-journal-controllers";
 
 const router = Router();
 
@@ -31,5 +32,8 @@ router.patch("/profile", updateProfile);
 
 // Access log (loggutdrag) - PDL Ch. 8
 router.get("/access-log", getAccessLog);
+
+// Treatment journal (read-only for patient)
+router.get("/treatment-journal", getPatientTreatmentJournal);
 
 export default router;

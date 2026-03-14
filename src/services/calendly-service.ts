@@ -1,5 +1,6 @@
 import axios, { AxiosRequestConfig } from 'axios';
 import type { CalendlyEventType, CalendlySchedulingLink, CalendlyUserProfile } from '../types/calendly-types';
+import { CALENDLY_LAUNCH_DATE } from '../config/calendly-config';
 
 // Environment variables
 const CALENDLY_ACCESS_TOKEN: string = process.env.CALENDLY_ACCESS_TOKEN || '';
@@ -176,12 +177,15 @@ export async function getScheduledEvents(userUri: string, filters: {
   maxStartTime?: string;
   pageToken?: string;
 } = {}) {
+  // Use user's filter if provided, otherwise fall back to launch date
+  const minStartTime = filters.minStartTime || CALENDLY_LAUNCH_DATE;
+
   const params: any = {
     user: userUri,
+    min_start_time: minStartTime,
     ...(filters.status && { status: filters.status }),
     ...(filters.sort && { sort: filters.sort }),
     ...(filters.count && { count: filters.count.toString() }),
-    ...(filters.minStartTime && { min_start_time: filters.minStartTime }),
     ...(filters.maxStartTime && { max_start_time: filters.maxStartTime }),
     ...(filters.pageToken && { page_token: filters.pageToken })
   };
@@ -204,7 +208,8 @@ export async function getScheduledEventsByInviteeEmail(inviteeEmail: string) {
   const params = {
     organization: CALENDLY_ORG_URI,
     invitee_email: inviteeEmail,
-    status: "active"
+    status: "active",
+    min_start_time: CALENDLY_LAUNCH_DATE
   };
 
   const response = await makeCalendlyRequest('/scheduled_events', {

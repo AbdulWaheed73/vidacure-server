@@ -447,27 +447,32 @@ export const getPatientMeetings = async (req: AuthenticatedRequest, res: Respons
       for (const meeting of patient.calendly.meetings) {
         // Try to get real-time details from Calendly for active meetings
         if (meeting.status === 'scheduled' && meeting.eventUri) {
-          const calendlyData = await getPatientMeetingByStoredUri(
-            meeting.eventUri,
-            meeting.inviteeUri,
-            undefined
-          );
+          try {
+            const calendlyData = await getPatientMeetingByStoredUri(
+              meeting.eventUri,
+              meeting.inviteeUri,
+              undefined
+            );
 
-          if (calendlyData.event) {
-            formattedMeetings.push({
-              id: meeting.eventUri,
-              patientName: calendlyData.invitee?.name || patient.name,
-              startTime: calendlyData.event.start_time,
-              endTime: calendlyData.event.end_time,
-              status: calendlyData.event.status,
-              meetingUrl: calendlyData.event.location?.join_url || null,
-              eventType: calendlyData.event.name || 'Appointment',
-              createdAt: calendlyData.event.created_at,
-              cancelUrl: calendlyData.invitee?.cancel_url || null,
-              rescheduleUrl: calendlyData.invitee?.reschedule_url || null,
-              source: meeting.source
-            });
-            continue;
+            if (calendlyData.event) {
+              formattedMeetings.push({
+                id: meeting.eventUri,
+                patientName: calendlyData.invitee?.name || patient.name,
+                startTime: calendlyData.event.start_time,
+                endTime: calendlyData.event.end_time,
+                status: calendlyData.event.status,
+                meetingUrl: calendlyData.event.location?.join_url || null,
+                eventType: calendlyData.event.name || 'Appointment',
+                createdAt: calendlyData.event.created_at,
+                cancelUrl: calendlyData.invitee?.cancel_url || null,
+                rescheduleUrl: calendlyData.invitee?.reschedule_url || null,
+                source: meeting.source
+              });
+              continue;
+            }
+          } catch (lookupErr) {
+            console.error(`Calendly lookup failed for event ${meeting.eventUri}:`, lookupErr);
+            // Fall through to use stored data below
           }
         }
 

@@ -296,9 +296,35 @@ export const createLabTestCheckoutSession = async (
 
 const TERMINAL_STATUSES: GiddirSubStatus[] = ["signed", "completed-updated", "revoked"];
 
+// Sync deduplication & cooldown
+const activeSyncs = new Map<string, Promise<void>>();
+const lastSyncTimes = new Map<string, number>();
+const SYNC_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
+const SYNC_CONCURRENCY = 3; // max parallel Giddir requests
+
 async function syncPendingOrders(patientId: string): Promise<void> {
   if (!isGiddirConfigured()) return;
 
+  // Cooldown: skip if last sync was recent
+  const lastSync = lastSyncTimes.get(patientId) || 0;
+  if (Date.now() - lastSync < SYNC_COOLDOWN_MS) return;
+
+  // Deduplication: skip if a sync is already running for this patient
+  const existing = activeSyncs.get(patientId);
+  if (existing) return existing;
+
+  const syncPromise = doSyncPendingOrders(patientId);
+  activeSyncs.set(patientId, syncPromise);
+
+  try {
+    await syncPromise;
+  } finally {
+    activeSyncs.delete(patientId);
+    lastSyncTimes.set(patientId, Date.now());
+  }
+}
+
+async function doSyncPendingOrders(patientId: string): Promise<void> {
   const pendingOrders = await LabTestOrder.find({
     patient: patientId,
     status: { $nin: TERMINAL_STATUSES },
@@ -310,8 +336,10 @@ async function syncPendingOrders(patientId: string): Promise<void> {
 
   console.log(`🔄 Syncing ${pendingOrders.length} pending orders from Giddir...`);
 
-  await Promise.all(
-    pendingOrders.map(async (order) => {
+  // Process in batches to avoid hammering the API
+  for (let i = 0; i < pendingOrders.length; i += SYNC_CONCURRENCY) {
+    const batch = pendingOrders.slice(i, i + SYNC_CONCURRENCY);
+    await Promise.all(batch.map(async (order) => {
       try {
         const data = order.giddirServiceRequestId
           ? await fetchLabResults(order.giddirServiceRequestId)
@@ -362,8 +390,8 @@ async function syncPendingOrders(patientId: string): Promise<void> {
       } catch (error) {
         console.error(`Error syncing order ${order.externalTrackingId}:`, error);
       }
-    })
-  );
+    }));
+  }
 }
 
 // ============================================================================
