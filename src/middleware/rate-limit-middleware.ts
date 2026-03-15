@@ -99,3 +99,11 @@ export const sessionLookupRateLimiter = createRateLimiter({
   message: 'Too many requests. Please slow down.',
   keyGenerator: (req) => `session-lookup:${req.ip}`
 });
+
+// Global API rate limiter: 100 requests per 15 minutes per IP
+export const globalApiRateLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Too many requests from this IP. Please try again later.',
+  keyGenerator: (req) => `global:${req.ip}`
+});

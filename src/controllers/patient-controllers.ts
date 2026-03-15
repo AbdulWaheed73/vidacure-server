@@ -3,6 +3,7 @@ import PatientSchema from "../schemas/patient-schema";
 import AuditLogSchema from "../schemas/auditLog-schema";
 import { AuthenticatedRequest } from "../types/generic-types";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
+import { sendWelcomeEmail } from "../services/email-service";
 import { Types } from "mongoose";
 
 export const getAllPatients = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -70,13 +71,22 @@ export const submitQuestionnaire = async (req: AuthenticatedRequest, res: Respon
     // Save patient and send response
     try {
       await patient.save();
-      await auditDatabaseOperation(req, "submit_questionnaire_save", "UPDATE", userId, { 
+      await auditDatabaseOperation(req, "submit_questionnaire_save", "UPDATE", userId, {
         questionnaireLength: questionnaire.length,
-        onboardingCompleted: true 
+        onboardingCompleted: true
       });
-      res.status(200).json({ 
+
+      // Send welcome email (fire-and-forget)
+      if (patient.email) {
+        sendWelcomeEmail({
+          to: patient.email,
+          patientName: patient.given_name || patient.name || "Patient",
+        }).catch(() => {});
+      }
+
+      res.status(200).json({
         message: "Questionnaire submitted successfully",
-        questionnaire: patient.questionnaire 
+        questionnaire: patient.questionnaire
       });
     } catch (saveError) {
       console.error("Error saving patient questionnaire:", saveError);

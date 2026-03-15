@@ -9,9 +9,6 @@ export const validateRequiredEnvVars = () => {
     'CRIIPTO_CLIENT_ID_WEB',
     'FRONTEND_URL',
     'SERVER_URL',
-    'SUPABASE_URL',
-    'SUPABASE_SERVICE_ROLE_KEY',
-    'SUPABASE_JWT_SECRET',
     'SSN_ENCRYPTION_KEY',
   ];
 
