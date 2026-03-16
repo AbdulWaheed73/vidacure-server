@@ -22,7 +22,7 @@ import adminNotificationRoutes from "./routes/admin-notification-routes";
 import pendingBookingRoutes from "./routes/pending-booking-routes";
 import providerRoutes from "./routes/provider-routes";
 import { requireAuth, requireCSRF, requireRole, requireActiveSubscription } from "./middleware/auth-middleware";
-import { globalApiRateLimiter } from "./middleware/rate-limit-middleware";
+// import { globalApiRateLimiter } from "./middleware/rate-limit-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
 import { requireConsent } from "./middleware/consent-middleware";
 import os from 'os';
@@ -109,10 +109,10 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Global API rate limiting — 100 requests per 15 min per IP (skip webhooks)
-app.use("/api", (req, res, next) => {
-  if (req.path.endsWith('/webhook')) return next();
-  return globalApiRateLimiter(req, res, next);
-});
+// app.use("/api", (req, res, next) => {
+//   if (req.path.endsWith('/webhook')) return next();
+//   return globalApiRateLimiter(req, res, next);
+// });
 
 initializeAuth()
   .then(() => {
