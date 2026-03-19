@@ -10,7 +10,7 @@ import {
   FhirServiceRequestResource,
 } from "../types/giddir-types";
 
-const GIDDIR_TIMEOUT = 30000; // 30 seconds
+const GIDDIR_TIMEOUT = 45000; // 30 seconds
 
 const GIDDIR_BASE_URL = process.env.GIDDIR_BASE_URL || "";
 const GIDDIR_USERNAME = process.env.GIDDIR_USERNAME || "";

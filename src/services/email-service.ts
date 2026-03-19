@@ -2,7 +2,8 @@ import { Resend } from "resend";
 
 // ⚠️ TEST MODE: Override recipient to Resend account owner's email.
 // Remove this constant and the override below when switching to production.
-const TEST_OVERRIDE_EMAIL = "aw736024@gmail.com";
+
+// const TEST_OVERRIDE_EMAIL = "aw736024@gmail.com";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -18,9 +19,9 @@ type LabTestOrderEmailParams = {
 export const sendLabTestOrderConfirmation = async (
   params: LabTestOrderEmailParams
 ): Promise<void> => {
-  const { patientName, testPackageName, testPackageNameSv, price, orderedAt } = params;
-  const to = TEST_OVERRIDE_EMAIL || params.to;
-  const from = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+  const { testPackageName, testPackageNameSv, price, orderedAt } = params;
+  const to = params.to;
+  const from = process.env.RESEND_FROM_EMAIL || "info@vidacure.se";
 
   const formattedDate = new Intl.DateTimeFormat("sv-SE", {
     year: "numeric",
@@ -173,9 +174,9 @@ type WelcomeEmailParams = {
 export const sendWelcomeEmail = async (
   params: WelcomeEmailParams
 ): Promise<void> => {
-  const { patientName } = params;
-  const to = TEST_OVERRIDE_EMAIL || params.to;
-  const from = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+  const { patientName , to } = params;
+  // const to = params.to;
+  const from = process.env.RESEND_FROM_EMAIL || "info@vidacure.se";
 
   const html = `
 <!DOCTYPE html>
