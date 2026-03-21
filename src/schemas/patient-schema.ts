@@ -116,6 +116,7 @@ const PatientSchema: Schema = new Schema(
         eventUri: { type: String, required: true },
         inviteeUri: { type: String },
         scheduledTime: { type: Date, required: true },
+        endTime: { type: Date },
         status: {
           type: String,
           enum: ["scheduled", "completed", "canceled"],
@@ -127,6 +128,11 @@ const PatientSchema: Schema = new Schema(
           enum: ["pre-login", "post-login"],
           default: "pre-login"
         },
+        eventType: { type: String },
+        meetingUrl: { type: String },
+        cancelUrl: { type: String },
+        rescheduleUrl: { type: String },
+        calendlyHostName: { type: String },
         createdAt: { type: Date, default: Date.now }
       }]
     },
@@ -168,6 +174,9 @@ const PatientSchema: Schema = new Schema(
 
     // Supabase Chat related fields
     supabaseConversationId: { type: String }, // Store the patient's Supabase conversation UUID
+
+    // Giddir lab test patient ID (UUID assigned by Giddir system)
+    giddirPatientId: { type: String, sparse: true, index: true },
 
     // GDPR / PDL data lifecycle fields
     deletionRequestedAt: { type: Date },          // When patient requested account deletion

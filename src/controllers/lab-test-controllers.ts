@@ -13,6 +13,7 @@ import {
   isGiddirConfigured,
   fetchLabResults,
   fetchLabResultsByTrackingId,
+  fetchRequisitionList,
 } from "../services/giddir-service";
 import stripeService from "../services/stripe-service";
 import { GiddirSubStatus } from "../types/giddir-types";
@@ -116,6 +117,12 @@ export const placeLabTestOrder = async (req: AuthenticatedRequest, res: Response
         message: "Failed to place order with lab testing service",
       });
       return;
+    }
+
+    // Save Giddir Patient ID if not already set
+    if (giddirResult.giddirPatientId && !patient.giddirPatientId) {
+      patient.giddirPatientId = giddirResult.giddirPatientId;
+      await patient.save();
     }
 
     // Save order to database
@@ -325,6 +332,16 @@ async function syncPendingOrders(patientId: string): Promise<void> {
 }
 
 async function doSyncPendingOrders(patientId: string): Promise<void> {
+  // Also run requisitionList reconciliation if patient has a giddirPatientId
+  try {
+    const patient = await Patient.findById(patientId).select("giddirPatientId").lean();
+    if (patient?.giddirPatientId) {
+      await reconcileWithRequisitionList(patientId, patient.giddirPatientId);
+    }
+  } catch (reconcileErr) {
+    console.error("Reconciliation error during sync:", reconcileErr);
+  }
+
   const pendingOrders = await LabTestOrder.find({
     patient: patientId,
     status: { $nin: TERMINAL_STATUSES },
@@ -663,6 +680,49 @@ export const handleGiddirWebhook = async (req: AuthenticatedRequest, res: Respon
 
     await order.save();
 
+    // Extract and save Giddir Patient ID from webhook payload if not already stored
+    try {
+      const payload = body as Record<string, unknown>;
+      let giddirPatientId: string | undefined;
+
+      // Check Bundle entries for Patient resource or ServiceRequest.subject.reference
+      if (payload.resourceType === "Bundle" && Array.isArray(payload.entry)) {
+        for (const entry of payload.entry as Array<Record<string, unknown>>) {
+          const resource = entry.resource as Record<string, unknown>;
+          if (!resource) continue;
+          if (resource.resourceType === "Patient" && resource.id) {
+            giddirPatientId = resource.id as string;
+            break;
+          }
+          if (resource.resourceType === "ServiceRequest") {
+            const subject = resource.subject as Record<string, unknown> | undefined;
+            const ref = subject?.reference as string | undefined;
+            if (ref?.startsWith("Patient/")) {
+              giddirPatientId = ref.replace("Patient/", "");
+              break;
+            }
+          }
+        }
+      }
+      // Check raw ServiceRequest subject
+      if (!giddirPatientId && payload.resourceType === "ServiceRequest") {
+        const subject = payload.subject as Record<string, unknown> | undefined;
+        const ref = subject?.reference as string | undefined;
+        if (ref?.startsWith("Patient/")) {
+          giddirPatientId = ref.replace("Patient/", "");
+        }
+      }
+
+      if (giddirPatientId && order.patient) {
+        await Patient.updateOne(
+          { _id: order.patient, giddirPatientId: { $exists: false } },
+          { $set: { giddirPatientId } }
+        );
+      }
+    } catch (patientIdError) {
+      console.error("Error extracting giddirPatientId from webhook:", patientIdError);
+    }
+
     console.log(
       `✅ Giddir webhook processed: order ${order.externalTrackingId}, status: ${order.status}, results: ${order.results.length}`
     );
@@ -672,5 +732,180 @@ export const handleGiddirWebhook = async (req: AuthenticatedRequest, res: Respon
     console.error("Giddir webhook processing error:", error);
     // Always return 200 to prevent webhook retries
     res.status(200).json({ received: true });
+  }
+};
+
+// ============================================================================
+// Reconcile with Giddir requisitionList — discover missing orders
+// ============================================================================
+
+const RESULTS_READY_STATUSES: GiddirSubStatus[] = [
+  "partial-report", "final-report", "updated-final-report", "signed", "completed-updated",
+];
+
+const lastReconcileTimes = new Map<string, number>();
+const RECONCILE_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+
+async function reconcileWithRequisitionList(
+  patientId: string,
+  giddirPatientId: string,
+  bypassCooldown = false
+): Promise<{ discovered: number; updated: number }> {
+  // Cooldown check
+  if (!bypassCooldown) {
+    const lastReconcile = lastReconcileTimes.get(patientId) || 0;
+    if (Date.now() - lastReconcile < RECONCILE_COOLDOWN_MS) {
+      return { discovered: 0, updated: 0 };
+    }
+  }
+
+  lastReconcileTimes.set(patientId, Date.now());
+
+  const requisitions = await fetchRequisitionList(giddirPatientId);
+  if (requisitions.length === 0) return { discovered: 0, updated: 0 };
+
+  // Fetch all local orders for this patient (including drafts and terminal)
+  const localOrders = await LabTestOrder.find({ patient: patientId });
+
+  let discovered = 0;
+  let updated = 0;
+
+  for (const req of requisitions) {
+    // Try to find a matching local order
+    const existingOrder = localOrders.find(
+      (o) =>
+        (o.giddirServiceRequestId && o.giddirServiceRequestId === req.serviceRequestId) ||
+        (o.externalTrackingId && o.externalTrackingId === req.externalTrackingId)
+    );
+
+    if (existingOrder) {
+      // Update status if changed and not already terminal
+      if (
+        req.subStatus &&
+        req.subStatus !== existingOrder.status &&
+        !TERMINAL_STATUSES.includes(existingOrder.status as GiddirSubStatus)
+      ) {
+        existingOrder.status = req.subStatus;
+        existingOrder.statusHistory.push({ status: req.subStatus, timestamp: new Date() });
+        if (TERMINAL_STATUSES.includes(req.subStatus)) {
+          existingOrder.completedAt = new Date();
+        }
+        // Backfill giddirServiceRequestId if missing
+        if (!existingOrder.giddirServiceRequestId) {
+          existingOrder.giddirServiceRequestId = req.serviceRequestId;
+        }
+        await existingOrder.save();
+        updated++;
+      }
+    } else {
+      // Discovered a new order not in our local DB — create it
+      const newOrder = new LabTestOrder({
+        patient: patientId,
+        giddirServiceRequestId: req.serviceRequestId,
+        externalTrackingId: req.externalTrackingId || undefined,
+        testPackage: {
+          id: "discovered",
+          productCode: "unknown",
+          name: "Discovered Lab Test",
+          nameSv: "Upptäckt labbtest",
+        },
+        status: req.subStatus || "created",
+        paymentStatus: "paid", // Assume paid since it exists in Giddir
+        statusHistory: [
+          { status: req.subStatus || "created", timestamp: new Date(req.authoredOn || Date.now()) },
+        ],
+        results: [],
+        orderedAt: new Date(req.authoredOn || Date.now()),
+      });
+      await newOrder.save();
+      discovered++;
+
+      // If results are potentially available, fetch them
+      if (req.subStatus && RESULTS_READY_STATUSES.includes(req.subStatus)) {
+        try {
+          const data = await fetchLabResults(req.serviceRequestId);
+          if (data && data.observations.length > 0) {
+            for (const obs of data.observations) {
+              newOrder.results.push(parseObservationToResult(obs));
+            }
+            if (data.subStatus) {
+              newOrder.status = data.subStatus;
+              newOrder.statusHistory.push({ status: data.subStatus, timestamp: new Date() });
+            }
+            await newOrder.save();
+          }
+        } catch (fetchErr) {
+          console.error(`Error fetching results for discovered order ${req.serviceRequestId}:`, fetchErr);
+        }
+      }
+    }
+  }
+
+  if (discovered > 0 || updated > 0) {
+    console.log(`Reconciliation complete: ${discovered} discovered, ${updated} updated for patient ${patientId}`);
+  }
+
+  return { discovered, updated };
+}
+
+// ============================================================================
+// POST /sync — Force sync with Giddir (bypasses cooldown)
+// ============================================================================
+
+export const forceSyncOrders = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ success: false, message: "Unauthorized" });
+      return;
+    }
+
+    if (!isGiddirConfigured()) {
+      res.status(503).json({ success: false, message: "Lab test service not configured" });
+      return;
+    }
+
+    const patient = await Patient.findById(userId);
+    if (!patient) {
+      res.status(404).json({ success: false, message: "Patient not found" });
+      return;
+    }
+
+    let syncResult = { discovered: 0, updated: 0 };
+
+    // Run requisitionList reconciliation if we have a giddirPatientId
+    if (patient.giddirPatientId) {
+      syncResult = await reconcileWithRequisitionList(userId, patient.giddirPatientId, true);
+    }
+
+    // Also run the normal pending order sync (bypassing cooldown)
+    lastSyncTimes.delete(userId);
+    await syncPendingOrders(userId);
+
+    // Fetch fresh orders to return
+    const orders = await LabTestOrder.find({
+      patient: userId,
+      status: { $ne: "draft" },
+    })
+      .sort({ orderedAt: -1 })
+      .lean();
+
+    await req.auditLogger?.logSuccess(
+      "lab-test-force-sync",
+      "READ",
+      userId,
+      { discovered: syncResult.discovered, updated: syncResult.updated }
+    );
+
+    res.status(200).json({
+      success: true,
+      orders,
+      discovered: syncResult.discovered,
+      updated: syncResult.updated,
+    });
+  } catch (error) {
+    console.error("Error force-syncing lab test orders:", error);
+    await req.auditLogger?.logFailure("lab-test-force-sync", "READ", error);
+    res.status(500).json({ success: false, message: "Failed to sync orders" });
   }
 };

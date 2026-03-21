@@ -265,6 +265,7 @@ export function buildFhirOrderBundle(
 export async function placeOrder(bundle: FhirBundle): Promise<{
   success: boolean;
   serviceRequestId?: string;
+  giddirPatientId?: string;
   error?: string;
 }> {
   try {
@@ -286,14 +287,22 @@ export async function placeOrder(bundle: FhirBundle): Promise<{
     const data = await response.json();
     console.log("✅ Giddir order placed successfully:", JSON.stringify(data).substring(0, 1000));
 
-    // Extract ServiceRequest ID from the response Bundle entries
+    // Extract ServiceRequest ID and Patient ID from the response Bundle entries
     let serviceRequestId: string | null = null;
+    let giddirPatientId: string | null = null;
     if (data?.entry && Array.isArray(data.entry)) {
       for (const entry of data.entry) {
         const resource = entry?.resource || entry;
         if (resource?.resourceType === "ServiceRequest" && resource?.id) {
           serviceRequestId = resource.id;
-          break;
+          // Extract patient ID from subject.reference (format: "Patient/{uuid}")
+          const subjectRef = resource?.subject?.reference as string | undefined;
+          if (subjectRef?.startsWith("Patient/")) {
+            giddirPatientId = subjectRef.replace("Patient/", "");
+          }
+        }
+        if (resource?.resourceType === "Patient" && resource?.id) {
+          giddirPatientId = resource.id;
         }
       }
     }
@@ -302,7 +311,11 @@ export async function placeOrder(bundle: FhirBundle): Promise<{
       serviceRequestId = data?.id || null;
     }
 
-    return { success: true, serviceRequestId: serviceRequestId || undefined };
+    return {
+      success: true,
+      serviceRequestId: serviceRequestId || undefined,
+      giddirPatientId: giddirPatientId || undefined,
+    };
   } catch (error) {
     console.error("Giddir order error:", error);
     return {
@@ -675,4 +688,88 @@ function parseLabResultBundle(data: Record<string, unknown>): FetchedOrderData {
 
 export function isGiddirConfigured(): boolean {
   return !!(GIDDIR_BASE_URL && GIDDIR_USERNAME && GIDDIR_PASSWORD && GIDDIR_APP_ID);
+}
+
+// ============================================================================
+// Requisition List — Fetch all orders for a patient from Giddir
+// ============================================================================
+
+export type RequisitionListItem = {
+  serviceRequestId: string;
+  subStatus?: GiddirSubStatus;
+  externalTrackingId?: string;
+  authoredOn?: string;
+  performerDisplay?: string;
+};
+
+export async function fetchRequisitionList(
+  giddirPatientId: string
+): Promise<RequisitionListItem[]> {
+  try {
+    const response = await makeGiddirRequest(
+      `/api/externalservicerequest/patient/${giddirPatientId}/requisitionList`,
+      { method: "GET" }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log(`Giddir requisitionList returned ${response.status} for patient ${giddirPatientId}: ${errorText}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const items: RequisitionListItem[] = [];
+
+    if (data?.entry && Array.isArray(data.entry)) {
+      for (const entry of data.entry) {
+        const resource = (entry as Record<string, unknown>)?.resource as Record<string, unknown>;
+        if (!resource || resource.resourceType !== "ServiceRequest") continue;
+
+        const sr = resource as unknown as FhirServiceRequestResource;
+        const item: RequisitionListItem = {
+          serviceRequestId: sr.id || "",
+        };
+
+        // Extract sub-status from extensions
+        if (sr.extension) {
+          for (const ext of sr.extension) {
+            if (ext.url?.includes("sub-status") && (ext.valueString || ext.valueCode)) {
+              item.subStatus = (ext.valueString || ext.valueCode) as GiddirSubStatus;
+            }
+          }
+        }
+
+        // Extract external tracking ID from identifiers
+        const externalIdSystem = `http://giddir.com/${GIDDIR_APP_ID}-id`;
+        if (sr.identifier) {
+          for (const id of sr.identifier) {
+            if (id.system === externalIdSystem) {
+              item.externalTrackingId = id.value;
+            }
+          }
+        }
+
+        // Extract authoredOn
+        const authoredOn = (resource as Record<string, unknown>).authoredOn as string | undefined;
+        if (authoredOn) {
+          item.authoredOn = authoredOn;
+        }
+
+        // Extract performer display
+        if (sr.performer && sr.performer.length > 0) {
+          item.performerDisplay = sr.performer[0].display || undefined;
+        }
+
+        if (item.serviceRequestId) {
+          items.push(item);
+        }
+      }
+    }
+
+    console.log(`Giddir requisitionList: found ${items.length} requisitions for patient ${giddirPatientId}`);
+    return items;
+  } catch (error) {
+    console.error(`Error fetching requisition list for patient ${giddirPatientId}:`, error);
+    return [];
+  }
 }

@@ -55,6 +55,24 @@ const PendingBookingSchema: Schema = new Schema(
       type: Date,
       required: true
     },
+    endTime: {
+      type: Date
+    },
+    eventType: {
+      type: String
+    },
+    meetingUrl: {
+      type: String
+    },
+    cancelUrl: {
+      type: String
+    },
+    rescheduleUrl: {
+      type: String
+    },
+    calendlyHostName: {
+      type: String
+    },
     status: {
       type: String,
       enum: ["active", "canceled", "linked"],

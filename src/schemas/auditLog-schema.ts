@@ -20,7 +20,7 @@ const AuditLogSchema: Schema = new Schema({
 // PDL-compliant indexes for log extracts and reviews
 AuditLogSchema.index({ targetId: 1, timestamp: -1 }); // Patient log extracts (loggutdrag)
 AuditLogSchema.index({ userId: 1, timestamp: -1 });    // User access review
-AuditLogSchema.index({ timestamp: -1 });                // Chronological review
 AuditLogSchema.index({ action: 1, success: 1, timestamp: -1 }); // Anomaly detection
+AuditLogSchema.index({ timestamp: 1 }, { expireAfterSeconds: 157680000 }); // 5-year TTL auto-expiry (also serves chronological review)
 
 export default mongoose.model<AuditLogT & Document>("AuditLog", AuditLogSchema);

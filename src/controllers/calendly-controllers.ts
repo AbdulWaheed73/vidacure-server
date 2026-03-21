@@ -431,13 +431,7 @@ export const getPatientMeetings = async (req: AuthenticatedRequest, res: Respons
       return;
     }
 
-    if (!patient.doctor) {
-      res.status(400).json({
-        error: "No doctor assigned",
-        message: "Please contact support to assign a doctor to your account"
-      });
-      return;
-    }
+    const hasDoctor = !!patient.doctor;
 
     // Get all meetings from patient's history
     const formattedMeetings: any[] = [];
@@ -481,13 +475,14 @@ export const getPatientMeetings = async (req: AuthenticatedRequest, res: Respons
           id: meeting.eventUri,
           patientName: patient.name,
           startTime: meeting.scheduledTime,
-          endTime: null, // Not stored in history
+          endTime: meeting.endTime || null,
           status: meeting.status === 'completed' ? 'active' : meeting.status,
-          meetingUrl: null,
-          eventType: 'Appointment',
+          meetingUrl: meeting.meetingUrl || null,
+          eventType: meeting.eventType || 'Appointment',
           createdAt: meeting.createdAt,
-          cancelUrl: null,
-          rescheduleUrl: null,
+          cancelUrl: meeting.cancelUrl || null,
+          rescheduleUrl: meeting.rescheduleUrl || null,
+          calendlyHostName: meeting.calendlyHostName || null,
           source: meeting.source,
           completedAt: meeting.completedAt
         });
@@ -501,11 +496,13 @@ export const getPatientMeetings = async (req: AuthenticatedRequest, res: Respons
 
     console.log(`📅 Returning ${formattedMeetings.length} meetings from history`);
 
-    await auditDatabaseOperation(req, "get_patient_meetings", "READ", patientId, {
-      patientId,
-      doctorId: patient.doctor._id,
-      meetingsCount: formattedMeetings.length
-    });
+    if (hasDoctor) {
+      await auditDatabaseOperation(req, "get_patient_meetings", "READ", patientId, {
+        patientId,
+        doctorId: (patient.doctor as any)._id,
+        meetingsCount: formattedMeetings.length
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -513,7 +510,7 @@ export const getPatientMeetings = async (req: AuthenticatedRequest, res: Respons
         name: patient.name,
         email: patient.email
       },
-      doctorName: (patient.doctor as any).name,
+      doctorName: hasDoctor ? (patient.doctor as any).name : null,
       meetings: formattedMeetings,
       count: formattedMeetings.length
     });
@@ -666,10 +663,8 @@ export const getPatientAvailableEventTypes = async (req: AuthenticatedRequest, r
     }
 
     if (!patient.doctor) {
-      res.status(400).json({
-        error: "No doctor assigned",
-        message: "Please contact support to assign a doctor to your account"
-      });
+      // No doctor yet — return empty response so frontend can fall back to generic booking
+      res.status(200).json({ success: true, eventType: null, message: "No doctor assigned yet" });
       return;
     }
 
@@ -764,8 +759,14 @@ type CalendlyWebhookEvent = {
     event: string;
     scheduled_event: {
       uri: string;
+      name?: string;
       start_time: string;
       end_time: string;
+      location?: {
+        type?: string;
+        join_url?: string;
+        status?: string;
+      };
     };
     tracking?: {
       utm_campaign?: string;
@@ -874,6 +875,12 @@ export const handleCalendlyWebhook = async (
         const scheduledTime = new Date(event.payload.scheduled_event.start_time);
         const eventUri = event.payload.scheduled_event.uri;
         const inviteeUri = event.payload.uri;
+        const eventName = event.payload.scheduled_event.name || undefined;
+        const meetingUrl = event.payload.scheduled_event.location?.join_url || undefined;
+        const endTime = event.payload.scheduled_event.end_time ? new Date(event.payload.scheduled_event.end_time) : undefined;
+        const cancelUrl = event.payload.cancel_url || undefined;
+        const rescheduleUrl = event.payload.reschedule_url || undefined;
+        const calendlyHostName = event.payload.name || undefined;
 
         // Check if this is a provider booking (utm_term: "provider_{patientId}_{providerId}")
         if (utmTerm?.startsWith("provider_")) {
@@ -977,8 +984,14 @@ export const handleCalendlyWebhook = async (
             eventUri,
             inviteeUri,
             scheduledTime,
+            endTime,
             status: "scheduled" as const,
             source: "post-login" as const,
+            eventType: eventName,
+            meetingUrl,
+            cancelUrl,
+            rescheduleUrl,
+            calendlyHostName: calendlyHostName,
             createdAt: new Date()
           };
 
@@ -1039,6 +1052,12 @@ export const handleCalendlyWebhook = async (
           inviteeEmail: event.payload.email,
           inviteeName: event.payload.name,
           scheduledTime,
+          endTime,
+          eventType: eventName,
+          meetingUrl,
+          cancelUrl,
+          rescheduleUrl,
+          calendlyHostName,
           status: "active",
           expiresAt,
         });

@@ -24,6 +24,7 @@ import providerRoutes from "./routes/provider-routes";
 import { requireAuth, requireCSRF, requireRole, requireActiveSubscription } from "./middleware/auth-middleware";
 // import { globalApiRateLimiter } from "./middleware/rate-limit-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
+import { startAuditFlushTimer } from "./services/audit-service";
 import { requireConsent } from "./middleware/consent-middleware";
 import os from 'os';
 
@@ -49,6 +50,7 @@ console.log(`🔗 Server URL: ${SERVER_URL}`);
 databaseConnection()
   .then(() => {
     console.log("🚀 MongoDB connection established.");
+    startAuditFlushTimer();
   })
   .catch((err) => {
     console.error("🔥 MongoDB connection failed:", err);

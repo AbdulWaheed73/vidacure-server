@@ -85,9 +85,15 @@ export type PatientT = {
       eventUri: string;
       inviteeUri?: string;
       scheduledTime: Date;
+      endTime?: Date;
       status: "scheduled" | "completed" | "canceled";
       completedAt?: Date;
       source: "pre-login" | "post-login";
+      eventType?: string;
+      meetingUrl?: string;
+      cancelUrl?: string;
+      rescheduleUrl?: string;
+      calendlyHostName?: string;
       createdAt: Date;
     }[];
   };
@@ -115,6 +121,9 @@ export type PatientT = {
     createdAt: Date;
     updatedAt: Date;
   }[];
+
+  // Giddir lab test patient ID (UUID assigned by Giddir system)
+  giddirPatientId?: string;
 
   // Stream Chat related fields (legacy - to be deprecated)
   chatChannelId?: string; // Store the patient's medical channel ID

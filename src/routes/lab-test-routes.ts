@@ -9,6 +9,7 @@ import {
   getOrders,
   getOrderById,
   handleGiddirWebhook,
+  forceSyncOrders,
 } from "../controllers/lab-test-controllers";
 
 const router = Router();
@@ -22,6 +23,7 @@ const patientAuth = [requireAuth, auditMiddleware, requireCSRF, requireRole("pat
 router.get("/packages", ...patientAuth, getTestPackages);
 router.post("/orders", ...patientAuth, placeLabTestOrder);
 router.post("/create-checkout-session", paymentRateLimiter, ...patientAuth, createLabTestCheckoutSession);
+router.post("/sync", ...patientAuth, forceSyncOrders);
 router.get("/orders", ...patientAuth, getOrders);
 router.get("/orders/:orderId", ...patientAuth, getOrderById);
 

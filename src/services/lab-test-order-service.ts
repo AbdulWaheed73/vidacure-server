@@ -65,6 +65,13 @@ export async function placeLabTestOrderForPatient(
     );
   }
 
+  // Save Giddir Patient ID to the patient document if not already set
+  if (giddirResult.giddirPatientId && !patient.giddirPatientId) {
+    patient.giddirPatientId = giddirResult.giddirPatientId;
+    await patient.save();
+    console.log(`Saved giddirPatientId ${giddirResult.giddirPatientId} for patient ${patientId}`);
+  }
+
   // Update existing order or create a new one
   if (existingOrderId) {
     const order = await LabTestOrder.findById(existingOrderId);

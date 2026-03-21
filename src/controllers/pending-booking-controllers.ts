@@ -187,8 +187,14 @@ export const linkBookingToUser = async (req: AuthenticatedRequest, res: Response
       eventUri: pendingBooking.calendlyEventUri!,
       inviteeUri: pendingBooking.calendlyInviteeUri,
       scheduledTime: pendingBooking.scheduledTime!,
+      endTime: pendingBooking.endTime || undefined,
       status: "scheduled",
       source: "pre-login",
+      eventType: pendingBooking.eventType || undefined,
+      meetingUrl: pendingBooking.meetingUrl || undefined,
+      cancelUrl: pendingBooking.cancelUrl || undefined,
+      rescheduleUrl: pendingBooking.rescheduleUrl || undefined,
+      calendlyHostName: pendingBooking.calendlyHostName || undefined,
       createdAt: new Date()
     });
 

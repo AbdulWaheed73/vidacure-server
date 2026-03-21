@@ -78,7 +78,7 @@ export const sendLabTestOrderConfirmation = async (
             <td style="padding:0 32px 20px;">
               <h3 style="margin:0 0 8px;font-size:17px;color:#005044;">Provtagning</h3>
               <p style="margin:0;font-size:14px;color:#444;line-height:1.6;">
-                Blodprov är ett av de viktigaste verktygen för att förstå din hälsa. Genom att analysera dina blodvärden kan vi identifiera riskfaktorer tidigt och ge dig skräddarsydda rekommendationer för att förbättra din livsstil och hälsa.
+                Vid övervikt och obesitas rekommenderas provtagning som en viktig del av den medicinska utredningen. Enligt gällande riktlinjer behöver man utvärdera individens hjärtkärlmässiga riskprofil innan behandling påbörjas, särskilt om BMI ligger mellan 27–29. Blodprover hjälper till att identifiera riskfaktorer för hjärt–kärlsjukdom, diabetes och andra relaterade tillstånd, och ger en säker grund för att planera rätt behandling och uppföljning.
               </p>
             </td>
           </tr>
@@ -86,12 +86,12 @@ export const sendLabTestOrderConfirmation = async (
           <!-- Evidensbaserad riskprofilering -->
           <tr>
             <td style="padding:0 32px 20px;">
-              <h3 style="margin:0 0 8px;font-size:17px;color:#005044;">Evidensbaserad riskprofilering</h3>
+              <h3 style="margin:0 0 8px;font-size:17px;color:#005044;">Evidensbaserad riskprofilering för hjärt–kärlsjukdom, diabetes och relaterade tillstånd</h3>
               <p style="margin:0 0 8px;font-size:14px;color:#444;line-height:1.6;">
-                Vårt program bygger på evidensbaserad medicin och täcker de vanligaste riskfaktorerna för kroniska sjukdomar, inklusive hjärt-kärlsjukdomar, diabetes och sköldkörtelrubbningar.
+                Vid övervikt och obesitas ökar risken för hjärt–kärlsjukdomar, diabetes och andra kroniska tillstånd. Därför är det viktigt att regelbundet kontrollera vissa blodprover för att tidigt upptäcka avvikelser och kunna sätta in rätt behandling i tid. Vårt provtagningsprogram bygger på aktuell evidens och riktlinjer för preventivt hälsoarbete och ger dig en tydlig, medicinskt relevant bild av din hälsostatus.
               </p>
               <p style="margin:0 0 8px;font-size:14px;color:#444;line-height:1.6;">
-                Dina provsvar granskas av en legitimerad läkare som skapar en personlig hälsoprofil med rekommendationer. Du kommer att få instruktioner för hur och var du tar dina prover.
+                Efter provtagningen går en läkare igenom dina resultat och ger en skriftlig medicinsk återkoppling med rekommendationer för fortsatt behandling. Om något värde avviker på ett sätt som kräver vidare utredning hänvisar vi dig till din vårdcentral. Instruktioner för hur provtagningen går till kommer du att få när du beställer dina prover.
               </p>
             </td>
           </tr>
@@ -101,15 +101,15 @@ export const sendLabTestOrderConfirmation = async (
             <td style="padding:0 32px 8px;">
               <h3 style="margin:0 0 8px;font-size:17px;color:#005044;">Basprov – ingår i medicinskt/livsstilsprogrammet</h3>
               <p style="margin:0 0 8px;font-size:14px;color:#444;line-height:1.6;">
-                Följande analyser ingår i ditt baspaket:
+                Detta paket innehåller de prover som enligt riktlinjer är nödvändiga för att bedöma risk för hjärt–kärlsjukdom, diabetes och relaterade tillstånd.
               </p>
               <ul style="margin:0 0 16px;padding-left:20px;font-size:14px;color:#444;line-height:1.8;">
-                <li>Blodfetter (kolesterol, LDL, HDL, triglycerider)</li>
-                <li>Faste-glukos och HbA1c</li>
-                <li>Leverprover</li>
-                <li>Njurfunktion</li>
-                <li>Blodstatus</li>
-                <li>Sköldkörtelprov</li>
+                <li>Blodfetter (kolesterol, LDL, HDL, triglycerider avslöjar om man har hyperlipidemi)</li>
+                <li>Faste-glukos och HbA1c (långtidssocker, dessa tas för att screena för förhöjt blodsocker prediabetes eller diabete)</li>
+                <li>Leverprover (Förhöjda leverprover kan tyda på fettlever)</li>
+                <li>Njurfunktion (Njursvikt kan tyda på kärlsjukdom)</li>
+                <li>Blodstatus (Blodvärde och relaterade prover om blodkroppar)</li>
+                <li>Sköldkörtelprov (Viktigt att utesluta undersfunktion av sköldkörtel)</li>
               </ul>
             </td>
           </tr>

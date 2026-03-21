@@ -22,6 +22,12 @@ export type PendingBookingT = {
   inviteeEmail: string;
   inviteeName: string;
   scheduledTime: Date;
+  endTime?: Date;
+  eventType?: string;
+  meetingUrl?: string;
+  cancelUrl?: string;
+  rescheduleUrl?: string;
+  calendlyHostName?: string;
   status: "active" | "canceled" | "linked";
   linkedUserId?: Types.ObjectId; // Set when linked to a patient
   linkedAt?: Date;
