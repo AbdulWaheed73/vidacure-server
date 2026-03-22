@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../types/generic-types';
 import consentService from '../services/consent-service';
 import { REQUIRED_CONSENT_TYPES } from '../config/consent-config';
+import type { ConsentType } from '../types/consent-types';
 
 // Paths that are exempt from consent checks (e.g. onboarding must work before consent)
 const CONSENT_EXEMPT_PATHS = [
@@ -64,4 +65,39 @@ export function requireConsent(
       console.error('Consent check failed:', error);
       next();
     });
+}
+
+/**
+ * Middleware factory: require a specific optional consent type for a feature.
+ * Returns 451 if the patient hasn't accepted the specified consent.
+ */
+export function requireSpecificConsent(consentType: ConsentType) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+    if (!req.user || req.user.role !== 'patient') {
+      next();
+      return;
+    }
+
+    const userId = req.user.userId;
+
+    consentService.getConsentStatus(userId, consentType)
+      .then((status) => {
+        if (!status.hasAcceptedLatest) {
+          res.status(451).json({
+            error: 'Consent required',
+            message: `You must accept the ${consentType} consent before using this feature.`,
+            missingConsents: [{
+              consentType,
+              requiredVersion: status.currentVersion,
+            }],
+          });
+          return;
+        }
+        next();
+      })
+      .catch((error) => {
+        console.error(`Consent check failed for ${consentType}:`, error);
+        next();
+      });
+  };
 }

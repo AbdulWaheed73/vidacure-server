@@ -18,7 +18,7 @@ export type DataCategory =
   | 'prescription_data'    // prescriptions, prescription requests, medication
   | 'appointment_data'     // Calendly meetings, scheduling
   | 'subscription_data'    // Stripe subscription, payment status
-  | 'chat_messages'        // Doctor-patient chat via Supabase
+  | 'chat_messages'        // Doctor-patient chat via Socket.IO
   | 'lab_test_data'        // Lab test orders and results
   | 'audit_logs'           // Access logs (loggutdrag)
   | 'consent_records'      // GDPR consent history

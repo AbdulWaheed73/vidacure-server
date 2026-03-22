@@ -125,12 +125,6 @@ export type PatientT = {
   // Giddir lab test patient ID (UUID assigned by Giddir system)
   giddirPatientId?: string;
 
-  // Stream Chat related fields (legacy - to be deprecated)
-  chatChannelId?: string; // Store the patient's medical channel ID
-
-  // Supabase Chat related fields
-  supabaseConversationId?: string; // Store the patient's Supabase conversation UUID
-
   // GDPR / PDL data lifecycle fields
   deletionRequestedAt?: Date;
   anonymizedAt?: Date;

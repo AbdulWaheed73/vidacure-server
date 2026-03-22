@@ -64,7 +64,6 @@
   "dependencies": {
     "@criipto/oidc": "^1.0.0",
     "@criipto/verify-express": "^1.0.4",
-    "@supabase/supabase-js": "^2.90.1",
     "@types/stripe": "^8.0.416",
     "argon2": "^0.44.0",
     "axios": "^1.12.2",

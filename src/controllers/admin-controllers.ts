@@ -4,12 +4,13 @@ import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
 import ProviderSchema from "../schemas/provider-schema";
 import AuditLogSchema from "../schemas/auditLog-schema";
-import { supabaseChatApi } from "../services/supabase-chat-api";
 import stripeService from "../services/stripe-service";
 import { hashSSN, isValidSwedishSSN } from "../services/auth-service";
 import { getCalendlyUserByEmail, lookupCalendlyMemberByEmail } from "../services/calendly-service";
 import { AdminAuthenticatedRequest } from "../middleware/admin-auth-middleware";
 import { auditAdminAction } from "../middleware/audit-middleware";
+import { notifyChatReassignDoctor } from "../services/chat-client-service";
+import { LAB_TEST_PACKAGES } from "../config/lab-test-packages";
 
 /**
  * Get dashboard statistics
@@ -184,8 +185,23 @@ export const reassignDoctor = async (req: AdminAuthenticatedRequest, res: expres
       return res.status(400).json({ error: 'Patient is already assigned to this doctor' });
     }
 
-    // Use Supabase chat API for reassignment (handles participant updates)
-    await supabaseChatApi.reassignDoctor(patientId, newDoctorId, oldDoctorId);
+    // Update MongoDB relations
+    if (oldDoctorId) {
+      await DoctorSchema.findByIdAndUpdate(oldDoctorId, {
+        $pull: { patients: patientId },
+      });
+    }
+
+    await PatientSchema.findByIdAndUpdate(patientId, {
+      doctor: newDoctorId,
+    });
+
+    await DoctorSchema.findByIdAndUpdate(newDoctorId, {
+      $addToSet: { patients: patientId },
+    });
+
+    // Notify chat server to update conversation and broadcast events
+    await notifyChatReassignDoctor(patientId, newDoctorId);
 
     // Fetch updated patient and doctor info (select only admin-safe fields, no health data)
     const [updatedPatient, updatedNewDoctor, updatedOldDoctor] = await Promise.all([
@@ -264,7 +280,7 @@ export const getPatientSubscriptionDetails = async (req: AdminAuthenticatedReque
 
     // Fetch detailed Stripe data
     try {
-      const [stripeSubscription, paymentMethod, upcomingInvoice, paymentMethods] = await Promise.all([
+      const [stripeSubscription, paymentMethod, upcomingInvoice, paymentMethods, invoices] = await Promise.all([
         stripeService.getDetailedSubscriptionInfo(patientObj.subscription.stripeSubscriptionId),
         patientObj.subscription.stripeCustomerId
           ? stripeService.getCustomerDefaultPaymentMethod(patientObj.subscription.stripeCustomerId)
@@ -274,6 +290,9 @@ export const getPatientSubscriptionDetails = async (req: AdminAuthenticatedReque
           : null,
         patientObj.subscription.stripeCustomerId
           ? stripeService.getCustomerPaymentMethods(patientObj.subscription.stripeCustomerId)
+          : [],
+        patientObj.subscription.stripeCustomerId
+          ? stripeService.getCustomerInvoices(patientObj.subscription.stripeCustomerId)
           : []
       ]);
 
@@ -285,7 +304,20 @@ export const getPatientSubscriptionDetails = async (req: AdminAuthenticatedReque
           subscription: stripeSubscription,
           defaultPaymentMethod: paymentMethod,
           upcomingInvoice: upcomingInvoice,
-          allPaymentMethods: paymentMethods
+          allPaymentMethods: paymentMethods,
+          invoices: invoices.map((inv: any) => ({
+            id: inv.id,
+            number: inv.number,
+            status: inv.status,
+            amount_due: inv.amount_due,
+            amount_paid: inv.amount_paid,
+            currency: inv.currency,
+            created: inv.created,
+            period_start: inv.lines?.data?.[0]?.period?.start || inv.period_start,
+            period_end: inv.lines?.data?.[0]?.period?.end || inv.period_end,
+            invoice_pdf: inv.invoice_pdf,
+            hosted_invoice_url: inv.hosted_invoice_url,
+          }))
         }
       });
     } catch (error: any) {
@@ -1058,6 +1090,24 @@ export const deactivatePromotion = async (req: AdminAuthenticatedRequest, res: e
   } catch (error: any) {
     await auditAdminAction(req, 'admin_deactivate_promotion', 'UPDATE', false, undefined, undefined, error);
     res.status(error.statusCode || 500).json({ error: error.message });
+  }
+};
+
+/**
+ * Get current subscription products from Stripe and lab test packages from config
+ * GET /api/admin/subscription-products
+ */
+export const getSubscriptionProducts = async (_req: AdminAuthenticatedRequest, res: express.Response) => {
+  try {
+    const products = await stripeService.getSubscriptionProductDetails();
+    const labTestPackages = LAB_TEST_PACKAGES.map((pkg) => ({
+      name: pkg.name,
+      unitAmount: pkg.priceAmountOre,
+      currency: pkg.priceCurrency,
+    }));
+    res.json({ products, labTestPackages });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 };
 

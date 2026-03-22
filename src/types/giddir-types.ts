@@ -236,6 +236,7 @@ export type LabTestOrderT = {
   stripePaymentIntentId?: string;
   statusHistory: LabTestStatusHistoryEntry[];
   results: LabTestResult[];
+  labComment?: string;
   orderedAt: Date;
   completedAt?: Date;
   draftExpiresAt?: Date;

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth, requireCSRF, requireRole } from "../middleware/auth-middleware";
 import { auditMiddleware } from "../middleware/audit-middleware";
 import { paymentRateLimiter } from "../middleware/rate-limit-middleware";
+import { requireSpecificConsent } from "../middleware/consent-middleware";
 import {
   getTestPackages,
   placeLabTestOrder,
@@ -17,8 +18,8 @@ const router = Router();
 // Webhook — no auth, uses webhook secret verification in controller
 router.post("/webhook", handleGiddirWebhook);
 
-// Patient endpoints — protected with auth middleware
-const patientAuth = [requireAuth, auditMiddleware, requireCSRF, requireRole("patient")];
+// Patient endpoints — protected with auth + lab test consent
+const patientAuth = [requireAuth, auditMiddleware, requireCSRF, requireRole("patient"), requireSpecificConsent('lab_test_consent')];
 
 router.get("/packages", ...patientAuth, getTestPackages);
 router.post("/orders", ...patientAuth, placeLabTestOrder);

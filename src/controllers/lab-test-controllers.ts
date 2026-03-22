@@ -373,6 +373,11 @@ async function doSyncPendingOrders(patientId: string): Promise<void> {
           changed = true;
         }
 
+        if (data.labComment && data.labComment !== order.labComment) {
+          order.labComment = data.labComment;
+          changed = true;
+        }
+
         if (data.subStatus && data.subStatus !== order.status) {
           order.status = data.subStatus;
           order.statusHistory.push({
@@ -495,6 +500,9 @@ export const getOrderById = async (req: AuthenticatedRequest, res: Response) => 
         if (data) {
           if (data.serviceRequestId && !orderDoc.giddirServiceRequestId) {
             orderDoc.giddirServiceRequestId = data.serviceRequestId;
+          }
+          if (data.labComment) {
+            orderDoc.labComment = data.labComment;
           }
           if (data.subStatus && data.subStatus !== orderDoc.status) {
             orderDoc.status = data.subStatus;
@@ -645,6 +653,11 @@ export const handleGiddirWebhook = async (req: AuthenticatedRequest, res: Respon
     // Update Giddir service request ID if we got it for the first time
     if (parsed.serviceRequestId && !order.giddirServiceRequestId) {
       order.giddirServiceRequestId = parsed.serviceRequestId;
+    }
+
+    // Update lab comment from ServiceRequest extension
+    if (parsed.labComment) {
+      order.labComment = parsed.labComment;
     }
 
     // Update status

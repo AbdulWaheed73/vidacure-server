@@ -89,6 +89,7 @@ const labTestOrderSchema = new Schema(
     },
     statusHistory: [statusHistoryEntrySchema],
     results: [labTestResultSchema],
+    labComment: { type: String },
     orderedAt: { type: Date, default: Date.now },
     completedAt: { type: Date },
     // TTL field: MongoDB auto-deletes the document when this date passes.

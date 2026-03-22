@@ -1,25 +1,8 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import PatientSchema from '../schemas/patient-schema';
 import AuditLogSchema from '../schemas/auditLog-schema';
 import ConsentSchema from '../schemas/consent-schema';
 import type { PatientDataExport, ChatMessageExport } from '../types/data-export-types';
-
-const getSupabaseClient = (): SupabaseClient => {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error('Missing Supabase configuration. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
-  }
-
-  return createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-};
 
 /** Safely convert a value to ISO string, returning undefined for invalid dates */
 const safeDate = (value: unknown): string | undefined => {
@@ -39,15 +22,12 @@ export const dataExportService = {
       throw new Error('Patient not found');
     }
 
-    // Fetch chat messages from Supabase
+    // Fetch chat messages from MongoDB (Socket.IO chat collections)
     let chatMessages: ChatMessageExport[] = [];
-    if (patient.supabaseConversationId) {
-      try {
-        chatMessages = await this.fetchChatMessages(patient.supabaseConversationId);
-      } catch (error) {
-        console.error('Error fetching chat messages for export:', error);
-        // Continue export without chat messages rather than failing entirely
-      }
+    try {
+      chatMessages = await this.fetchChatMessages(userId);
+    } catch (error) {
+      console.error('Error fetching chat messages for export:', error);
     }
 
     return {
@@ -163,27 +143,33 @@ export const dataExportService = {
   },
 
   /**
-   * Fetch chat messages from Supabase for a conversation
+   * Fetch chat messages from MongoDB (Socket.IO chat collections)
    */
-  async fetchChatMessages(conversationId: string): Promise<ChatMessageExport[]> {
-    const supabase = getSupabaseClient();
+  async fetchChatMessages(patientId: string): Promise<ChatMessageExport[]> {
+    const db = mongoose.connection.db;
+    if (!db) return [];
 
-    const { data: messages, error } = await supabase
-      .from('messages')
-      .select('content, sender_role, message_type, created_at')
-      .eq('conversation_id', conversationId)
-      .eq('is_deleted', false)
-      .order('created_at', { ascending: true });
+    // Find the patient's conversation in chat_conversations
+    const conversation = await db.collection('chat_conversations').findOne({
+      patientId: new Types.ObjectId(patientId),
+    });
 
-    if (error) {
-      throw error;
-    }
+    if (!conversation) return [];
 
-    return (messages || []).map(msg => ({
+    // Fetch messages for the conversation
+    const messages = await db.collection('chat_messages')
+      .find({
+        conversationId: conversation._id,
+        isDeleted: { $ne: true },
+      })
+      .sort({ createdAt: 1 })
+      .toArray();
+
+    return messages.map(msg => ({
       content: msg.content,
-      senderRole: msg.sender_role,
-      messageType: msg.message_type,
-      createdAt: msg.created_at,
+      senderRole: msg.senderRole,
+      messageType: msg.messageType,
+      createdAt: msg.createdAt?.toISOString?.() || new Date(msg.createdAt).toISOString(),
     }));
   },
 };

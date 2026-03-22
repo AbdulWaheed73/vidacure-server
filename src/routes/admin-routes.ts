@@ -23,6 +23,7 @@ import {
   createPromotion,
   listPromotions,
   deactivatePromotion,
+  getSubscriptionProducts,
 } from "../controllers/admin-controllers";
 
 const router = express.Router();
@@ -73,6 +74,7 @@ router.get("/patients/:patientId/provider-tiers", getPatientProviderTiers);
 router.post("/promotions", createPromotion);
 router.get("/promotions", listPromotions);
 router.post("/promotions/:promoCodeId/deactivate", deactivatePromotion);
+router.get("/subscription-products", getSubscriptionProducts);
 
 // Calendly lookup
 router.post("/calendly-lookup", calendlyLookup);

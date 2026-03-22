@@ -169,12 +169,6 @@ const PatientSchema: Schema = new Schema(
       }
     ],
 
-    // Stream Chat related fields (legacy - to be deprecated)
-    chatChannelId: { type: String }, // Store the patient's medical channel ID
-
-    // Supabase Chat related fields
-    supabaseConversationId: { type: String }, // Store the patient's Supabase conversation UUID
-
     // Giddir lab test patient ID (UUID assigned by Giddir system)
     giddirPatientId: { type: String, sparse: true, index: true },
 

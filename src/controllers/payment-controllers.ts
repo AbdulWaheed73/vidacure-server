@@ -514,7 +514,22 @@ export const changePlan = async (
 
     if (isUpgrade) {
       // Calculate proration amount via invoice preview
-      const prorationDate = Math.floor(Date.now() / 1000);
+      // Fetch subscription to get the valid proration date range from subscription items
+      const currentSub = await stripeService.stripe.subscriptions.retrieve(
+        patient.subscription.stripeSubscriptionId,
+        { expand: ['items.data'] }
+      );
+      const currentItem = currentSub.items?.data?.[0];
+      const periodStart = currentItem?.current_period_start;
+      const periodEnd = currentItem?.current_period_end;
+      const now = Math.floor(Date.now() / 1000);
+
+      // Clamp proration date within the current subscription period
+      let prorationDate = now;
+      if (periodStart && periodEnd) {
+        prorationDate = Math.max(periodStart, Math.min(now, periodEnd));
+      }
+
       const preview = await stripeService.stripe.invoices.createPreview({
         customer: patient.subscription.stripeCustomerId,
         subscription: patient.subscription.stripeSubscriptionId,

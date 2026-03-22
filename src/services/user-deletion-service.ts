@@ -15,7 +15,6 @@ import PatientSchema from '../schemas/patient-schema';
 import DoctorSchema from '../schemas/doctor-schema';
 import AuditLogSchema from '../schemas/auditLog-schema';
 import { stripeService } from './stripe-service';
-import { supabaseChatApi } from './supabase-chat-api';
 import { DELETION_GRACE_PERIOD_DAYS, calculateRetentionExpiry } from '../config/retention-config';
 
 /**
@@ -163,13 +162,6 @@ export const userDeletionService = {
       }
     }
 
-    // Anonymize chat data in Supabase (strip identity, keep messages)
-    try {
-      await supabaseChatApi.deleteUserData(patientId, 'patient');
-    } catch (error) {
-      console.error('Failed to anonymize Supabase chat data:', error);
-    }
-
     // Strip personal identifiers, retain clinical data
     const anonymizedId = `anon_${patientId.slice(-8)}`;
     await PatientSchema.findByIdAndUpdate(patientId, {
@@ -184,8 +176,6 @@ export const userDeletionService = {
         retentionExpiresAt: retentionExpiry,
         dateOfBirth: null,
         gender: null,
-        chatChannelId: null,
-        supabaseConversationId: null,
         'subscription.stripeCustomerId': null,
         'subscription.stripeSubscriptionId': null,
       },
@@ -358,13 +348,9 @@ export const userDeletionService = {
     }
   },
 
-  async deleteStreamData(userId: string, userType: UserTypeForDeletion): Promise<StreamDeletionResult> {
-    try {
-      await supabaseChatApi.deleteUserData(userId, userType);
-      return { success: true, channelIds: [] };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Failed to delete chat data' };
-    }
+  async deleteStreamData(_userId: string, _userType: UserTypeForDeletion): Promise<StreamDeletionResult> {
+    // Chat data is now in MongoDB (Socket.IO chat service) — handled separately if needed
+    return { success: true, channelIds: [] };
   },
 
   async createCalendlyNotification(

@@ -18,12 +18,8 @@ const getPriceId = (planType: 'lifestyle' | 'medical'): string => {
   return priceId;
 };
 
-// Cache for subscription product IDs (resolved from price IDs)
-let subscriptionProductIds: string[] | null = null;
-
+// Always fetch fresh product IDs from current price env vars
 const getSubscriptionProductIds = async (): Promise<string[]> => {
-  if (subscriptionProductIds) return subscriptionProductIds;
-
   const ids: string[] = [];
   for (const planType of ['lifestyle', 'medical'] as const) {
     try {
@@ -35,14 +31,52 @@ const getSubscriptionProductIds = async (): Promise<string[]> => {
       // Skip if price not configured
     }
   }
-  subscriptionProductIds = ids;
   return ids;
+};
+
+// Fetch subscription product details (name, price, ID) for admin context
+const getSubscriptionProductDetails = async (): Promise<Array<{
+  planType: string;
+  priceId: string;
+  productId: string;
+  productName: string;
+  unitAmount: number | null;
+  currency: string;
+}>> => {
+  const details: Array<{
+    planType: string;
+    priceId: string;
+    productId: string;
+    productName: string;
+    unitAmount: number | null;
+    currency: string;
+  }> = [];
+
+  for (const planType of ['lifestyle', 'medical'] as const) {
+    try {
+      const priceId = getPriceId(planType);
+      const price = await stripe.prices.retrieve(priceId, { expand: ['product'] });
+      const product = price.product as Stripe.Product;
+      details.push({
+        planType,
+        priceId,
+        productId: product.id,
+        productName: product.name,
+        unitAmount: price.unit_amount,
+        currency: price.currency,
+      });
+    } catch {
+      // Skip if price not configured
+    }
+  }
+  return details;
 };
 
 export const stripeService = {
   stripe,
   getPriceId,
   getSubscriptionProductIds,
+  getSubscriptionProductDetails,
 
   createCustomer: async (email: string, name: string, metadata?: Record<string, string>) => {
     return await stripe.customers.create({
@@ -253,9 +287,18 @@ export const stripeService = {
   // Admin-specific methods for fetching detailed subscription information
   getDetailedSubscriptionInfo: async (subscriptionId: string) => {
     const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
-      expand: ['default_payment_method', 'latest_invoice', 'customer'],
+      expand: ['default_payment_method', 'latest_invoice', 'customer', 'items.data'],
     });
-    return subscription;
+
+    // In newer Stripe API versions, current_period_start/end moved to subscription items
+    const firstItem = subscription.items?.data?.[0];
+    const enriched = {
+      ...subscription,
+      current_period_start: firstItem?.current_period_start ?? null,
+      current_period_end: firstItem?.current_period_end ?? null,
+    };
+
+    return enriched;
   },
 
   getCustomerDefaultPaymentMethod: async (customerId: string) => {
@@ -287,7 +330,6 @@ export const stripeService = {
     const invoices = await stripe.invoices.list({
       customer: customerId,
       limit,
-      status: 'paid',
     });
     return invoices.data;
   },

@@ -10,7 +10,7 @@ import patientRoutes from "./routes/patient-routes";
 import doctorRoutes from "./routes/doctor-routes";
 import paymentRoutes from "./routes/payment-routes";
 
-import supabaseChatRoutes from "./routes/supabase-chat-routes";
+
 import calendlyRoutes from "./routes/calendly-routes";
 import adminRoutes from "./routes/admin-routes";
 import adminAuthRoutes from "./routes/admin-auth-routes";
@@ -145,8 +145,7 @@ app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('
 app.use("/api/providers", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), requireConsent, providerRoutes);
 app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), doctorRoutes);
 app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), requireActiveSubscription, requireConsent, prescriptionRoutes);
-// Supabase Chat routes (audit middleware applied per-route inside supabase-chat-routes.ts)
-app.use("/api/supabase-chat", supabaseChatRoutes);
+
 // Lab test routes - webhook is public (verified by secret), other routes require patient auth
 app.use("/api/lab-tests", labTestRoutes);
 // Calendly routes - the webhook handler inside uses express.json() and bypasses auth via route-level check

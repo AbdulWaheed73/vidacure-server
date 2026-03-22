@@ -1,9 +1,9 @@
 import DoctorSchema from "../schemas/doctor-schema";
-import { supabaseChatApi } from "./supabase-chat-api";
+import PatientSchema from "../schemas/patient-schema";
 
 /**
  * Assigns a doctor to a patient using round-robin logic (least patients first)
- * Also creates the Supabase conversation for patient-doctor communication
+ * Chat conversations are created on-demand by the Socket.IO chat service
  */
 export const assignDoctorRoundRobin = async (patientId: string) => {
   try {
@@ -31,20 +31,21 @@ export const assignDoctorRoundRobin = async (patientId: string) => {
 
     console.log(`[Doctor Assignment] Selected doctor: ${selectedDoctor.name} (ID: ${selectedDoctor._id}) with ${minPatients} patients`);
 
-    // Create Supabase conversation and update patient-doctor relationship
-    const result = await supabaseChatApi.getOrCreatePatientConversation(
-      patientId,
-      selectedDoctor._id.toString()
-    );
+    // Update MongoDB relations
+    await PatientSchema.findByIdAndUpdate(patientId, {
+      doctor: selectedDoctor._id,
+    });
 
-    console.log(`[Doctor Assignment] Successfully assigned doctor and created conversation: ${result.conversationId}`);
+    await DoctorSchema.findByIdAndUpdate(selectedDoctor._id, {
+      $addToSet: { patients: patientId },
+    });
+
+    console.log(`[Doctor Assignment] Successfully assigned doctor ${selectedDoctor.name} to patient ${patientId}`);
 
     return {
       doctorId: selectedDoctor._id,
       doctorName: selectedDoctor.name,
-      conversationId: result.conversationId,
-      channelId: result.channelId,
-      previousPatientCount: minPatients
+      previousPatientCount: minPatients,
     };
 
   } catch (error) {

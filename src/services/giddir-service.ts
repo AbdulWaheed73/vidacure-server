@@ -432,6 +432,7 @@ export type ParsedWebhookData = {
   trackingId?: string;
   serviceRequestId?: string;
   subStatus?: GiddirSubStatus;
+  labComment?: string;
   observations: FhirObservationResource[];
 };
 
@@ -495,7 +496,7 @@ function extractServiceRequestData(
     result.serviceRequestId = sr.id;
   }
 
-  // Extract sub-status from extensions
+  // Extract sub-status and lab comments from extensions
   if (sr.extension) {
     for (const ext of sr.extension) {
       if (
@@ -503,6 +504,9 @@ function extractServiceRequestData(
         ext.url?.includes("sub-status")
       ) {
         result.subStatus = (ext.valueString || ext.valueCode) as GiddirSubStatus;
+      }
+      if (ext.url === "http://giddir.com/message-from-lab" && ext.valueString) {
+        result.labComment = ext.valueString;
       }
     }
   }
@@ -521,6 +525,7 @@ export type FetchedOrderData = {
   observations: FhirObservationResource[];
   subStatus?: GiddirSubStatus;
   serviceRequestId?: string;
+  labComment?: string;
 };
 
 // Endpoint 5b: GET /api/externalservicerequest/order/{id}/labResult
@@ -666,6 +671,9 @@ function parseLabResultBundle(data: Record<string, unknown>): FetchedOrderData {
           for (const ext of extensions) {
             if (ext.url?.includes("sub-status") && ext.valueString) {
               result.subStatus = ext.valueString as GiddirSubStatus;
+            }
+            if (ext.url === "http://giddir.com/message-from-lab" && ext.valueString) {
+              result.labComment = ext.valueString;
             }
           }
         }
