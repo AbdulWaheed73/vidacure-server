@@ -1,12 +1,13 @@
 import { Response } from "express";
 import { AuthenticatedRequest } from "../types/generic-types";
 import { AdminAuthenticatedRequest } from "../middleware/admin-auth-middleware";
-import { createSingleUseLink, getCalendlyUserByEmail, getScheduledEvents, getScheduledEventsByInviteeEmail, getEventInvitees, getPatientMeetingByStoredUri } from "../services/calendly-service";
+import { createSingleUseLink, getCalendlyUserByEmail, getScheduledEvents, getEventInvitees, getPatientMeetingByStoredUri } from "../services/calendly-service";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
 import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
 import AdminSchema from "../schemas/admin-schema";
 import ProviderSchema from "../schemas/provider-schema";
+import { sendBookingConfirmation, sendBookingCancellation } from "../services/email-service";
 
 // Patient booking endpoint - handles everything server-side
 export const createPatientBookingLink = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -945,6 +946,20 @@ export const handleCalendlyWebhook = async (
           await patient.save();
 
           console.log(`✅ Provider booking saved for patient: ${patientId}, provider: ${providerId}`);
+
+          // Send booking confirmation email (fire-and-forget)
+          sendBookingConfirmation({
+            to: patient.email,
+            patientName: patient.given_name || patient.name || event.payload.name,
+            eventName: eventName || provider.providerType || 'Konsultation',
+            scheduledTime,
+            endTime,
+            meetingUrl,
+            cancelUrl,
+            rescheduleUrl,
+            hostName: provider.name,
+          }).catch(() => {});
+
           res.status(200).json({ received: true, bookingCreated: true, source: "provider" });
           return;
         }
@@ -1013,6 +1028,20 @@ export const handleCalendlyWebhook = async (
           await patient.save();
 
           console.log(`✅ Post-login booking saved for patient: ${patientId}`);
+
+          // Send booking confirmation email (fire-and-forget)
+          sendBookingConfirmation({
+            to: patient.email,
+            patientName: patient.given_name || patient.name || event.payload.name,
+            eventName: eventName || 'Konsultation',
+            scheduledTime,
+            endTime,
+            meetingUrl,
+            cancelUrl,
+            rescheduleUrl,
+            hostName: calendlyHostName,
+          }).catch(() => {});
+
           res.status(200).json({ received: true, bookingCreated: true, source: "post-login" });
           return;
         }
@@ -1065,6 +1094,20 @@ export const handleCalendlyWebhook = async (
         await pendingBooking.save();
 
         console.log(`✅ Created pending booking for token: ${utmTerm}`);
+
+        // Send booking confirmation to the invitee directly (fire-and-forget)
+        sendBookingConfirmation({
+          to: event.payload.email,
+          patientName: event.payload.name,
+          eventName: eventName || 'Konsultation',
+          scheduledTime,
+          endTime,
+          meetingUrl,
+          cancelUrl,
+          rescheduleUrl,
+          hostName: calendlyHostName,
+        }).catch(() => {});
+
         res.status(200).json({ received: true, bookingCreated: true, source: "pre-login" });
         break;
       }
@@ -1137,6 +1180,19 @@ export const handleCalendlyWebhook = async (
             "calendly.inviteeUri": null,
           });
           console.log(`🧹 Cleared meeting data for linked patient: ${booking.linkedUserId}`);
+        }
+
+        // Send cancellation email (fire-and-forget)
+        const canceledPatient = patient || providerPatient;
+        const cancelEmail = canceledPatient?.email || booking?.inviteeEmail;
+        const cancelName = canceledPatient?.given_name || canceledPatient?.name || booking?.inviteeName || event.payload.name;
+        if (cancelEmail) {
+          sendBookingCancellation({
+            to: cancelEmail,
+            patientName: cancelName || 'Patient',
+            eventName: event.payload.scheduled_event.name || 'Konsultation',
+            scheduledTime: new Date(event.payload.scheduled_event.start_time),
+          }).catch(() => {});
         }
 
         res.status(200).json({ received: true, bookingCanceled: true });

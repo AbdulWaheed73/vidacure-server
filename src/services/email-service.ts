@@ -263,3 +263,323 @@ export const sendWelcomeEmail = async (
     console.error("Failed to send welcome email:", err);
   }
 };
+
+// ── Booking Confirmation Email ──────────────────────────────────────
+
+type BookingConfirmationEmailParams = {
+  to: string;
+  patientName: string;
+  eventName: string;
+  scheduledTime: Date;
+  endTime?: Date;
+  meetingUrl?: string;
+  cancelUrl?: string;
+  rescheduleUrl?: string;
+  hostName?: string;
+};
+
+export const sendBookingConfirmation = async (
+  params: BookingConfirmationEmailParams
+): Promise<void> => {
+  const {
+    patientName,
+    eventName,
+    scheduledTime,
+    endTime,
+    meetingUrl,
+    cancelUrl,
+    rescheduleUrl,
+    hostName,
+  } = params;
+  const to = params.to;
+  const from = process.env.RESEND_FROM_EMAIL || "info@vidacure.se";
+
+  const dateFmt = new Intl.DateTimeFormat("sv-SE", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const timeFmt = new Intl.DateTimeFormat("sv-SE", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const formattedDate = dateFmt.format(new Date(scheduledTime));
+  const formattedStart = timeFmt.format(new Date(scheduledTime));
+  const formattedEnd = endTime ? timeFmt.format(new Date(endTime)) : null;
+  const timeRange = formattedEnd
+    ? `${formattedStart} – ${formattedEnd}`
+    : formattedStart;
+
+  const joinSection = meetingUrl
+    ? `<tr>
+        <td style="padding:0 32px 24px;text-align:center;">
+          <a href="${meetingUrl}" style="display:inline-block;padding:14px 32px;background-color:#009689;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;border-radius:8px;">
+            Anslut till mötet
+          </a>
+        </td>
+      </tr>`
+    : "";
+
+  const linksSection =
+    cancelUrl || rescheduleUrl
+      ? `<tr>
+          <td style="padding:0 32px 24px;text-align:center;">
+            ${rescheduleUrl ? `<a href="${rescheduleUrl}" style="color:#009689;font-size:13px;text-decoration:underline;margin-right:16px;">Boka om</a>` : ""}
+            ${cancelUrl ? `<a href="${cancelUrl}" style="color:#999;font-size:13px;text-decoration:underline;">Avboka</a>` : ""}
+          </td>
+        </tr>`
+      : "";
+
+  const html = `
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bokningsbekräftelse – Vidacure</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f0f7f4;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f7f4;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+
+          <!-- Header -->
+          <tr>
+            <td style="padding:28px 32px 16px;text-align:center;">
+              <h1 style="margin:0;font-size:28px;font-weight:700;color:#005044;letter-spacing:-0.5px;">Vidacure</h1>
+              <hr style="border:none;border-top:2px solid #009689;margin:16px auto 0;width:80px;" />
+            </td>
+          </tr>
+
+          <!-- Confirmation Banner -->
+          <tr>
+            <td style="padding:8px 32px 24px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#e6f5f3;border-radius:8px;border-left:4px solid #009689;">
+                <tr>
+                  <td style="padding:20px 24px;">
+                    <h2 style="margin:0 0 12px;font-size:20px;color:#005044;">Din bokning är bekräftad!</h2>
+                    <p style="margin:0;font-size:14px;color:#333;line-height:1.6;">
+                      Hej ${patientName}, din tid hos Vidacure är bokad.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Meeting Details -->
+          <tr>
+            <td style="padding:0 32px 24px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e0ebe8;border-radius:8px;">
+                <tr>
+                  <td style="padding:20px 24px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding:0 0 12px;font-size:13px;color:#777;width:110px;vertical-align:top;">Typ</td>
+                        <td style="padding:0 0 12px;font-size:14px;color:#333;font-weight:600;">${eventName}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:0 0 12px;font-size:13px;color:#777;vertical-align:top;">Datum</td>
+                        <td style="padding:0 0 12px;font-size:14px;color:#333;font-weight:600;">${formattedDate}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:0 0 ${hostName ? "12px" : "0"};font-size:13px;color:#777;vertical-align:top;">Tid</td>
+                        <td style="padding:0 0 ${hostName ? "12px" : "0"};font-size:14px;color:#333;font-weight:600;">${timeRange}</td>
+                      </tr>
+                      ${hostName ? `<tr>
+                        <td style="padding:0;font-size:13px;color:#777;vertical-align:top;">Värd</td>
+                        <td style="padding:0;font-size:14px;color:#333;font-weight:600;">${hostName}</td>
+                      </tr>` : ""}
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Join Meeting Button -->
+          ${joinSection}
+
+          <!-- Reschedule / Cancel Links -->
+          ${linksSection}
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px 32px;background-color:#f0f7f4;text-align:center;border-top:1px solid #e0ebe8;">
+              <p style="margin:0 0 4px;font-size:12px;color:#777;">&copy; 2026 Vidacure</p>
+              <p style="margin:0;font-size:12px;">
+                <a href="https://www.vidacure.se" style="color:#009689;text-decoration:none;">www.vidacure.se</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  try {
+    const { error } = await resend.emails.send({
+      from,
+      to,
+      subject: `Bokningsbekräftelse – ${eventName}`,
+      html,
+    });
+
+    if (error) {
+      console.error("Resend API error sending booking confirmation:", error);
+    } else {
+      console.log("Booking confirmation email sent to:", to);
+    }
+  } catch (err) {
+    console.error("Failed to send booking confirmation email:", err);
+  }
+};
+
+// ── Booking Cancellation Email ──────────────────────────────────────
+
+type BookingCancellationEmailParams = {
+  to: string;
+  patientName: string;
+  eventName: string;
+  scheduledTime: Date;
+};
+
+export const sendBookingCancellation = async (
+  params: BookingCancellationEmailParams
+): Promise<void> => {
+  const { patientName, eventName, scheduledTime } = params;
+  const to = params.to;
+  const from = process.env.RESEND_FROM_EMAIL || "info@vidacure.se";
+
+  const dateFmt = new Intl.DateTimeFormat("sv-SE", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const timeFmt = new Intl.DateTimeFormat("sv-SE", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const formattedDate = dateFmt.format(new Date(scheduledTime));
+  const formattedTime = timeFmt.format(new Date(scheduledTime));
+
+  const html = `
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Avbokning – Vidacure</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f0f7f4;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f7f4;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+
+          <!-- Header -->
+          <tr>
+            <td style="padding:28px 32px 16px;text-align:center;">
+              <h1 style="margin:0;font-size:28px;font-weight:700;color:#005044;letter-spacing:-0.5px;">Vidacure</h1>
+              <hr style="border:none;border-top:2px solid #009689;margin:16px auto 0;width:80px;" />
+            </td>
+          </tr>
+
+          <!-- Cancellation Banner -->
+          <tr>
+            <td style="padding:8px 32px 24px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fef3f2;border-radius:8px;border-left:4px solid #dc2626;">
+                <tr>
+                  <td style="padding:20px 24px;">
+                    <h2 style="margin:0 0 12px;font-size:20px;color:#991b1b;">Din bokning har avbokats</h2>
+                    <p style="margin:0;font-size:14px;color:#333;line-height:1.6;">
+                      Hej ${patientName}, följande bokning har avbokats:
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Details -->
+          <tr>
+            <td style="padding:0 32px 24px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e0ebe8;border-radius:8px;">
+                <tr>
+                  <td style="padding:20px 24px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding:0 0 12px;font-size:13px;color:#777;width:110px;">Typ</td>
+                        <td style="padding:0 0 12px;font-size:14px;color:#333;font-weight:600;">${eventName}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:0 0 12px;font-size:13px;color:#777;">Datum</td>
+                        <td style="padding:0 0 12px;font-size:14px;color:#333;font-weight:600;">${formattedDate}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:0;font-size:13px;color:#777;">Tid</td>
+                        <td style="padding:0;font-size:14px;color:#333;font-weight:600;">${formattedTime}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Rebook CTA -->
+          <tr>
+            <td style="padding:0 32px 24px;text-align:center;">
+              <p style="margin:0 0 16px;font-size:14px;color:#444;line-height:1.6;">
+                Vill du boka en ny tid? Logga in på Vidacure för att boka.
+              </p>
+              <a href="https://www.vidacure.se" style="display:inline-block;padding:12px 28px;background-color:#009689;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:6px;">
+                Boka ny tid
+              </a>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px 32px;background-color:#f0f7f4;text-align:center;border-top:1px solid #e0ebe8;">
+              <p style="margin:0 0 4px;font-size:12px;color:#777;">&copy; 2026 Vidacure</p>
+              <p style="margin:0;font-size:12px;">
+                <a href="https://www.vidacure.se" style="color:#009689;text-decoration:none;">www.vidacure.se</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  try {
+    const { error } = await resend.emails.send({
+      from,
+      to,
+      subject: `Avbokning – ${eventName}`,
+      html,
+    });
+
+    if (error) {
+      console.error("Resend API error sending cancellation email:", error);
+    } else {
+      console.log("Booking cancellation email sent to:", to);
+    }
+  } catch (err) {
+    console.error("Failed to send booking cancellation email:", err);
+  }
+};

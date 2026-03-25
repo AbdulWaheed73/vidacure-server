@@ -432,6 +432,10 @@ export const getCurrentUser = async (
       userId: user._id?.toString(), // Keep for backward compatibility
       lastLogin: user.lastLogin,
       hasCompletedOnboarding: user.hasCompletedOnboarding || false,
+      ...(user.role === 'patient' && {
+        hasCompletedBMICheck: !!(user.bmi && user.height),
+        hasScheduledMeeting: !!user.calendly?.meetingStatus && ['scheduled', 'completed'].includes(user.calendly.meetingStatus),
+      }),
     };
 
     // Include consent status for patients to avoid a separate API call
