@@ -302,12 +302,18 @@ export const getMeetingStatus = async (req: AuthenticatedRequest, res: Response)
       }
     }
 
+    // Get meeting URL for the current scheduled meeting (from linked pending booking)
+    const currentMeeting = meetings.find(m =>
+      scheduledMeetingTime && new Date(m.scheduledTime).getTime() === new Date(scheduledMeetingTime).getTime()
+    );
+
     res.status(200).json({
       success: true,
       meetingStatus,
       scheduledMeetingTime,
       completedAt: patient.calendly?.completedAt,
       isMeetingGatePassed,
+      meetingUrl: currentMeeting?.meetingUrl || '',
     });
   } catch (error) {
     console.error("Error getting meeting status:", error);
