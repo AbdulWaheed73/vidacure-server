@@ -365,10 +365,10 @@ export const handleCallback = async (
       maxAge: Number(process.env.TTL),
     });
 
-    // Redirect back to frontend with success message
+    // Redirect back to frontend login route (handles smart routing based on onboarding status)
     const frontendUrl = process.env.FRONTEND_URL;
     res.redirect(
-      `${frontendUrl}?auth=success&message=${encodeURIComponent(isNewUser ? "Welcome! Account created successfully." : "Login successful!")}`
+      `${frontendUrl}/login?auth=success&message=${encodeURIComponent(isNewUser ? "Welcome! Account created successfully." : "Login successful!")}`
     );
   } catch (error) {
     console.error("❌ Callback error:", error);

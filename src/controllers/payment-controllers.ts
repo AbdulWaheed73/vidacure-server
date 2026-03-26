@@ -766,6 +766,9 @@ export const handleSuccessfulPayment = async (
 
     const { start: startTimestamp, end: endTimestamp } = getSubscriptionPeriod(subscription);
 
+    // Preserve canceledAt from prior cancellation (audit trail)
+    const previousCanceledAt = patient.subscription?.canceledAt;
+
     // Update patient with nested subscription object
     patient.subscription = {
       stripeCustomerId: session.customer as string,
@@ -788,6 +791,7 @@ export const handleSuccessfulPayment = async (
         ? new Date(endTimestamp * 1000)
         : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      canceledAt: previousCanceledAt,
       trialStart: subscription.trial_start
         ? new Date(subscription.trial_start * 1000)
         : undefined,
@@ -1004,6 +1008,9 @@ export const handleSetupIntentSucceeded = async (
     // Update patient record with nested subscription object
     const { start: startTimestamp, end: endTimestamp } = getSubscriptionPeriod(subscription);
 
+    // Preserve canceledAt from prior cancellation (audit trail)
+    const previousCanceledAt = patient.subscription?.canceledAt;
+
     patient.subscription = {
       stripeCustomerId: setupIntent.customer as string,
       stripeSubscriptionId: subscription.id,
@@ -1025,6 +1032,7 @@ export const handleSetupIntentSucceeded = async (
         ? new Date(endTimestamp * 1000)
         : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      canceledAt: previousCanceledAt,
       trialStart: subscription.trial_start
         ? new Date(subscription.trial_start * 1000)
         : undefined,
@@ -1155,6 +1163,9 @@ export const handlePaymentIntentSucceeded = async (
     // Update patient record with nested subscription object
     const { start: startTimestamp, end: endTimestamp } = getSubscriptionPeriod(subscription);
 
+    // Preserve canceledAt from prior cancellation (audit trail)
+    const previousCanceledAt = patient.subscription?.canceledAt;
+
     patient.subscription = {
       stripeCustomerId: paymentIntent.customer as string,
       stripeSubscriptionId: subscription.id,
@@ -1176,6 +1187,7 @@ export const handlePaymentIntentSucceeded = async (
         ? new Date(endTimestamp * 1000)
         : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      canceledAt: previousCanceledAt,
       trialStart: subscription.trial_start
         ? new Date(subscription.trial_start * 1000)
         : undefined,
