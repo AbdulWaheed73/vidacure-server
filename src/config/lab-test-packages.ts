@@ -5,10 +5,10 @@ import { LabTestPackage } from "../types/giddir-types";
 // Update the productCode values with your actual Giddir product codes.
 export const LAB_TEST_PACKAGES: LabTestPackage[] = [
   {
-    id: "test_blood",
-    productCode: "se_albafides_care_ab_test_blood",
-    name: "test_blood",
-    nameSv: "blood_test",
+    id: "blood73",
+    productCode: "se_albafides_care_ab_blood73",
+    name: "Blood Test",
+    nameSv: "Blodprov",
     description: "Order a blood test as part of your treatment plan.",
     descriptionSv: "Beställ ett blodprov som en del av din behandlingsplan.",
     analyses: [],
