@@ -30,7 +30,7 @@ export type DeletionResults = {
 };
 
 // Deletion status
-export type DeletionStatus = 'in_progress' | 'completed' | 'partial_failure' | 'failed';
+export type DeletionStatus = 'pending' | 'in_progress' | 'completed' | 'partial_failure' | 'failed';
 
 // User type for deletion
 export type UserTypeForDeletion = 'patient' | 'doctor';

@@ -201,6 +201,7 @@ export type LabTestPackage = {
   descriptionSv: string;
   analyses: LabTestAnalysis[];
   priceAmountOre: number;
+  originalPriceAmountOre?: number;
   priceCurrency: string;
 };
 

@@ -768,6 +768,11 @@ type CalendlyWebhookEvent = {
         join_url?: string;
         status?: string;
       };
+      event_memberships?: Array<{
+        user: string;
+        user_email?: string;
+        user_name?: string;
+      }>;
     };
     tracking?: {
       utm_campaign?: string;
@@ -881,7 +886,7 @@ export const handleCalendlyWebhook = async (
         const endTime = event.payload.scheduled_event.end_time ? new Date(event.payload.scheduled_event.end_time) : undefined;
         const cancelUrl = event.payload.cancel_url || undefined;
         const rescheduleUrl = event.payload.reschedule_url || undefined;
-        const calendlyHostName = event.payload.name || undefined;
+        const calendlyHostName = event.payload.scheduled_event.event_memberships?.[0]?.user_name || undefined;
 
         // Check if this is a provider booking (utm_term: "provider_{patientId}_{providerId}")
         if (utmTerm?.startsWith("provider_")) {

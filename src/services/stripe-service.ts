@@ -334,6 +334,16 @@ export const stripeService = {
     return invoices.data;
   },
 
+  getCustomerCheckoutPayments: async (customerId: string, limit: number = 24) => {
+    const sessions = await stripe.checkout.sessions.list({
+      customer: customerId,
+      limit,
+      status: 'complete',
+    });
+    // Only return one-time payment sessions (not subscription)
+    return sessions.data.filter(s => s.mode === 'payment');
+  },
+
   getCustomerPaymentMethods: async (customerId: string) => {
     const paymentMethods = await stripe.paymentMethods.list({
       customer: customerId,

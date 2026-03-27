@@ -641,9 +641,10 @@ export const getInvoiceHistory = async (
       return res.json({ invoices: [] });
     }
 
-    const invoices = await stripeService.getCustomerInvoices(
-      patient.subscription.stripeCustomerId
-    );
+    const [invoices, checkoutPayments] = await Promise.all([
+      stripeService.getCustomerInvoices(patient.subscription.stripeCustomerId),
+      stripeService.getCustomerCheckoutPayments(patient.subscription.stripeCustomerId),
+    ]);
 
     const mappedInvoices = invoices.map((invoice) => ({
       id: invoice.id,
@@ -652,11 +653,28 @@ export const getInvoiceHistory = async (
       currency: invoice.currency,
       status: invoice.status,
       planType: invoice.lines?.data?.[0]?.metadata?.planType || patient.subscription?.planType || null,
+      label: null,
       invoicePdf: invoice.invoice_pdf || null,
       receiptUrl: invoice.hosted_invoice_url || null,
     }));
 
-    res.json({ invoices: mappedInvoices });
+    const mappedPayments = checkoutPayments.map((session) => ({
+      id: session.id,
+      date: new Date(session.created * 1000).toISOString(),
+      amount: session.amount_total || 0,
+      currency: session.currency || 'sek',
+      status: 'paid',
+      planType: null,
+      label: session.metadata?.type === 'lab_test' ? 'Lab Test' : (session.line_items?.data?.[0]?.description || 'One-time payment'),
+      invoicePdf: null,
+      receiptUrl: session.url,
+    }));
+
+    const all = [...mappedInvoices, ...mappedPayments].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+
+    res.json({ invoices: all });
   } catch (error: any) {
     console.error("Error fetching invoice history:", error);
     res.status(500).json({ error: error.message });

@@ -40,7 +40,7 @@ const DeletionLogSchema: Schema = new Schema(
     },
     status: {
       type: String,
-      enum: ['in_progress', 'completed', 'partial_failure', 'failed'],
+      enum: ['pending', 'in_progress', 'completed', 'partial_failure', 'failed'],
       required: true,
       default: 'in_progress',
       index: true
@@ -73,8 +73,7 @@ const DeletionLogSchema: Schema = new Schema(
     confirmationId: {
       type: String,
       required: true,
-      unique: true,
-      index: true
+      unique: true
     }
   },
   {
@@ -85,6 +84,5 @@ const DeletionLogSchema: Schema = new Schema(
 // Indexes for efficient querying
 DeletionLogSchema.index({ requestedAt: -1 });
 DeletionLogSchema.index({ status: 1, requestedAt: -1 });
-DeletionLogSchema.index({ confirmationId: 1 });
 
 export default mongoose.model<DeletionLogT & Document>('DeletionLog', DeletionLogSchema);

@@ -435,6 +435,7 @@ export const getCurrentUser = async (
       ...(user.role === 'patient' && {
         hasCompletedBMICheck: !!(user.bmi && user.height),
         hasScheduledMeeting: !!user.calendly?.meetingStatus && ['scheduled', 'completed'].includes(user.calendly.meetingStatus),
+        deletionRequestedAt: user.deletionRequestedAt || null,
       }),
     };
 

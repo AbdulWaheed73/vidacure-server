@@ -72,7 +72,7 @@ export const userDeletionService = {
         ssnHash: user.ssnHash || 'unknown',
         requestedBy,
         requestedAt: new Date(),
-        status: 'pending' as DeletionStatus,
+        status: 'pending',
         confirmationId,
         deletionResults: {
           stripe: { success: false },
