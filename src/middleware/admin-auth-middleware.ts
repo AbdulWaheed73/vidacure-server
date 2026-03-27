@@ -82,10 +82,10 @@ export function requireAdminAuth(
     // Attach admin user to request
     req.admin = decoded;
 
-    console.log("✅ Admin authenticated:", {
-      userId: decoded.userId,
-      role: decoded.role,
-    });
+    // console.log("✅ Admin authenticated:", {
+    //   userId: decoded.userId,
+    //   role: decoded.role,
+    // });
 
     next();
   } catch (error) {
