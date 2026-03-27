@@ -116,14 +116,9 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
     let criiptoUserClaims: CriiptoUserClaims;
 
     try {
-      console.log("\n\n")
-      console.log("JWT :" , criiptoJWT);
-      console.log("\n\n")
       // Verify token signature using Criipto's JWKS
       criiptoUserClaims = await verifyCriiptoToken(criiptoJWT);
-      console.log("✅ 🔐 CRIIPTO TOKEN SIGNATURE VERIFIED SUCCESSFULLY (Mobile)");
-
-      console.log("User verified and decoded : ", criiptoUserClaims);
+      console.log("✅ Criipto token verified (Mobile)");
     } catch (verificationError) {
       console.error("❌ Criipto JWT verification failed:", verificationError);
       res.status(401).json({
@@ -185,14 +180,7 @@ export const setLogin = async (req: Request, res: Response): Promise<void> => {
     await auditDatabaseOperation(auditReq, "user_login_mobile", "READ", user._id?.toString(),
                                { authMethod: "bankid_mobile", ssn: criiptoUserClaims.ssn ? "provided" : "missing" });
 
-    console.log(
-      `👤 Found existing user (mobile):`,
-      {
-        userId: user._id?.toString(),
-        name: user.name,
-        role: user.role,
-      }
-    );
+    console.log(`✅ Mobile login: userId=${user._id?.toString()}, role=${user.role}`);
 
     // Create our app JWT for mobile client
     const appJWT = createAppJWT(user);
@@ -319,8 +307,7 @@ export const handleCallback = async (
     let criiptoToken: CriiptoUserClaims;
     try {
       criiptoToken = await verifyCriiptoToken(idToken);
-      console.log("✅ 🔐 CRIIPTO TOKEN SIGNATURE VERIFIED SUCCESSFULLY (Web Patient)");
-      console.log("👤 Criipto token claims:", criiptoToken);
+      console.log("✅ Criipto token verified (Web)");
     } catch (verificationError) {
       console.error("❌ Criipto token verification failed:", verificationError);
       res.status(401).json({

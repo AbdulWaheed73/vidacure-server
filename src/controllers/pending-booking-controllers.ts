@@ -49,7 +49,7 @@ export const createPendingSession = async (req: Request, res: Response): Promise
 
     await pendingSession.save();
 
-    console.log(`📋 Created pending session with token: ${token}`);
+    console.log(`📋 Created pending session`);
 
     res.status(201).json({
       success: true,

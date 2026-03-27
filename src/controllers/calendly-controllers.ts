@@ -1098,7 +1098,7 @@ export const handleCalendlyWebhook = async (
 
         await pendingBooking.save();
 
-        console.log(`✅ Created pending booking for token: ${utmTerm}`);
+        console.log(`✅ Created pending booking`);
 
         // Send booking confirmation to the invitee directly (fire-and-forget)
         sendBookingConfirmation({

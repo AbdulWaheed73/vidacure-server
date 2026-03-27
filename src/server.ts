@@ -170,16 +170,18 @@ export { app };
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🌟 Server is running on port ${PORT}`);
-  
-  const interfaces = os.networkInterfaces();
-  console.log('\n📡 Server accessible at:');
-  console.log(`   http://localhost:${PORT}`);
-  
-  Object.keys(interfaces).forEach((interfaceName) => {
-    interfaces[interfaceName]?.forEach((iface) => {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        console.log(`   http://${iface.address}:${PORT} (${interfaceName})`);
-      }
+
+  if (process.env.NODE_ENV !== 'production') {
+    const interfaces = os.networkInterfaces();
+    console.log('\n📡 Server accessible at:');
+    console.log(`   http://localhost:${PORT}`);
+
+    Object.keys(interfaces).forEach((interfaceName) => {
+      interfaces[interfaceName]?.forEach((iface) => {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          console.log(`   http://${iface.address}:${PORT} (${interfaceName})`);
+        }
+      });
     });
-  });
+  }
 });
