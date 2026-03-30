@@ -12,7 +12,7 @@ export const LAB_TEST_PACKAGES: LabTestPackage[] = [
     description: "Order a blood test as part of your treatment plan.",
     descriptionSv: "Beställ ett blodprov som en del av din behandlingsplan.",
     analyses: [],
-    priceAmountOre: 49900,
+    priceAmountOre: 34950,
     originalPriceAmountOre: 69900,
     priceCurrency: "sek",
   },

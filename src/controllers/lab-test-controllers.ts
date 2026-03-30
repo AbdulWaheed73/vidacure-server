@@ -258,11 +258,15 @@ export const createLabTestCheckoutSession = async (
     const successUrl = `${frontendUrl}/lab-tests/payment-success?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${frontendUrl}/lab-tests/payment-canceled`;
 
+    const priceId = process.env.STRIPE_PRICE_LAB_BLOOD73;
+    if (!priceId) {
+      res.status(500).json({ success: false, message: "Server configuration error" });
+      return;
+    }
+
     const session = await stripeService.createLabTestCheckoutSession({
       customerId,
-      priceAmountOre: testPackage.priceAmountOre,
-      priceCurrency: testPackage.priceCurrency,
-      productName: testPackage.name,
+      priceId,
       successUrl,
       cancelUrl,
       metadata: {
