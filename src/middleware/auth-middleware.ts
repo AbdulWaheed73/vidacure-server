@@ -151,7 +151,7 @@ export async function requireActiveSubscription(
         return;
       }
 
-      const validStatuses = ["active", "trialing"];
+      const validStatuses = ["active", "trialing", "past_due"];
       const subscriptionStatus = patient.subscription?.status;
 
       if (!subscriptionStatus || !validStatuses.includes(subscriptionStatus)) {

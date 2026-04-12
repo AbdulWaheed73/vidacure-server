@@ -7,7 +7,7 @@ import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
 import AdminSchema from "../schemas/admin-schema";
 import ProviderSchema from "../schemas/provider-schema";
-import { sendBookingConfirmation, sendBookingCancellation } from "../services/email-service";
+// import { sendBookingConfirmation, sendBookingCancellation } from "../services/email-service";
 
 // Patient booking endpoint - handles everything server-side
 export const createPatientBookingLink = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -590,9 +590,53 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
       pageToken: pageToken as string | undefined
     });
 
+    // Filter to this environment's meetings only. Prod and staging share a
+    // single Calendly org, so the doctor's calendar returns bookings from
+    // both environments. The local DB is the authoritative list of
+    // "meetings belonging to this env" — the webhook only records a meeting
+    // if its patient exists here — so we keep only meetings whose eventUri
+    // is already known to this DB and drop the rest.
+    const pageUris = meetings
+      .map((m: any) => m.uri)
+      .filter((uri: string | undefined): uri is string => typeof uri === "string");
+
+    const knownUris = new Set<string>();
+    if (pageUris.length > 0) {
+      const patientsWithMatches = await PatientSchema.find(
+        {
+          $or: [
+            { "calendly.meetings.eventUri": { $in: pageUris } },
+            { "providerMeetings.eventUri": { $in: pageUris } },
+          ],
+        },
+        {
+          "calendly.meetings.eventUri": 1,
+          "providerMeetings.eventUri": 1,
+          _id: 0,
+        }
+      ).lean();
+
+      for (const p of patientsWithMatches as any[]) {
+        p.calendly?.meetings?.forEach((m: any) => {
+          if (m.eventUri) knownUris.add(m.eventUri);
+        });
+        p.providerMeetings?.forEach((m: any) => {
+          if (m.eventUri) knownUris.add(m.eventUri);
+        });
+      }
+    }
+
+    const envMeetings = meetings.filter((m: any) => knownUris.has(m.uri));
+    const droppedCount = meetings.length - envMeetings.length;
+    if (droppedCount > 0) {
+      console.log(
+        `ℹ️  Filtered ${droppedCount} doctor meeting(s) from other environment(s)`
+      );
+    }
+
     // Fetch invitee data for each meeting in the batch
     const meetingsWithInvitees = await Promise.all(
-      meetings.map(async (meeting: any) => {
+      envMeetings.map(async (meeting: any) => {
         const invitees = await getEventInvitees(meeting.uri);
         const primaryInvitee = invitees[0] || {};
 
@@ -746,7 +790,6 @@ export const getPatientAvailableEventTypes = async (req: AuthenticatedRequest, r
 // Import for webhook handler
 import crypto from "crypto";
 import { Request } from "express";
-import { PendingSession, PendingBooking } from "../schemas/pending-booking-schema";
 
 // Calendly webhook types
 type CalendlyWebhookEvent = {
@@ -906,8 +949,11 @@ export const handleCalendlyWebhook = async (
           ]);
 
           if (!patient) {
-            console.error(`❌ Patient not found for provider webhook: ${patientId}`);
-            res.status(500).json({ error: "Patient not found - retry needed" });
+            // Patient doesn't exist in this environment — booking belongs to another
+            // env (prod ↔ staging cross-fire from the shared Calendly org). Ack and drop
+            // so Calendly doesn't retry.
+            console.log(`ℹ️  Ignoring provider booking for unknown patient ${patientId} (not in this environment)`);
+            res.status(200).json({ ignored: "unknown patient in this environment" });
             return;
           }
           if (!provider) {
@@ -952,18 +998,18 @@ export const handleCalendlyWebhook = async (
 
           console.log(`✅ Provider booking saved for patient: ${patientId}, provider: ${providerId}`);
 
-          // Send booking confirmation email (fire-and-forget)
-          sendBookingConfirmation({
-            to: patient.email,
-            patientName: patient.given_name || patient.name || event.payload.name,
-            eventName: eventName || provider.providerType || 'Konsultation',
-            scheduledTime,
-            endTime,
-            meetingUrl,
-            cancelUrl,
-            rescheduleUrl,
-            hostName: provider.name,
-          }).catch(() => {});
+          // Booking confirmation email — Calendly already notifies both invitee and host
+          // sendBookingConfirmation({
+          //   to: patient.email,
+          //   patientName: patient.given_name || patient.name || event.payload.name,
+          //   eventName: eventName || provider.providerType || 'Konsultation',
+          //   scheduledTime,
+          //   endTime,
+          //   meetingUrl,
+          //   cancelUrl,
+          //   rescheduleUrl,
+          //   hostName: provider.name,
+          // }).catch(() => {});
 
           res.status(200).json({ received: true, bookingCreated: true, source: "provider" });
           return;
@@ -976,8 +1022,11 @@ export const handleCalendlyWebhook = async (
 
           const patient = await PatientSchema.findById(patientId);
           if (!patient) {
-            console.error(`❌ Patient not found for webhook: ${patientId} - Calendly should retry`);
-            res.status(500).json({ error: "Patient not found - retry needed" });
+            // Patient doesn't exist in this environment — booking belongs to another
+            // env (prod ↔ staging cross-fire from the shared Calendly org). Ack and drop
+            // so Calendly doesn't retry.
+            console.log(`ℹ️  Ignoring doctor booking for unknown patient ${patientId} (not in this environment)`);
+            res.status(200).json({ ignored: "unknown patient in this environment" });
             return;
           }
 
@@ -1034,103 +1083,33 @@ export const handleCalendlyWebhook = async (
 
           console.log(`✅ Post-login booking saved for patient: ${patientId}`);
 
-          // Send booking confirmation email (fire-and-forget)
-          sendBookingConfirmation({
-            to: patient.email,
-            patientName: patient.given_name || patient.name || event.payload.name,
-            eventName: eventName || 'Konsultation',
-            scheduledTime,
-            endTime,
-            meetingUrl,
-            cancelUrl,
-            rescheduleUrl,
-            hostName: calendlyHostName,
-          }).catch(() => {});
+          // Booking confirmation email — Calendly already notifies both invitee and host
+          // sendBookingConfirmation({
+          //   to: patient.email,
+          //   patientName: patient.given_name || patient.name || event.payload.name,
+          //   eventName: eventName || 'Konsultation',
+          //   scheduledTime,
+          //   endTime,
+          //   meetingUrl,
+          //   cancelUrl,
+          //   rescheduleUrl,
+          //   hostName: calendlyHostName,
+          // }).catch(() => {});
 
           res.status(200).json({ received: true, bookingCreated: true, source: "post-login" });
           return;
         }
 
-        // Pre-login flow (existing logic)
-        if (!utmTerm) {
-          console.log("No token in webhook - booking may not be from tracked flow");
-          res.status(200).json({ received: true, message: "No tracking token found" });
-          return;
-        }
-
-        // Verify pending session exists (pre-login flow)
-        const pendingSession = await PendingSession.findOne({ token: utmTerm });
-        if (!pendingSession) {
-          console.error(`❌ Session not found for token: ${utmTerm} - Calendly should retry`);
-          res.status(500).json({ error: "Session not found - retry needed" });
-          return;
-        }
-
-        // Check for duplicate pending booking (idempotency)
-        const existingPendingBooking = await PendingBooking.findOne({ calendlyEventUri: eventUri });
-        if (existingPendingBooking) {
-          console.log(`⚠️ Pending booking already exists for eventUri: ${eventUri} - skipping duplicate`);
-          res.status(200).json({ received: true, message: "Already processed", duplicate: true });
-          return;
-        }
-
-        // Set expiry for pending booking (30 days)
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + 30);
-
-        // Create pending booking
-        const pendingBooking = new PendingBooking({
-          token: utmTerm,
-          calendlyEventUri: eventUri,
-          calendlyInviteeUri: inviteeUri,
-          inviteeEmail: event.payload.email,
-          inviteeName: event.payload.name,
-          scheduledTime,
-          endTime,
-          eventType: eventName,
-          meetingUrl,
-          cancelUrl,
-          rescheduleUrl,
-          calendlyHostName,
-          status: "active",
-          expiresAt,
-        });
-
-        await pendingBooking.save();
-
-        console.log(`✅ Created pending booking`);
-
-        // Send booking confirmation to the invitee directly (fire-and-forget)
-        sendBookingConfirmation({
-          to: event.payload.email,
-          patientName: event.payload.name,
-          eventName: eventName || 'Konsultation',
-          scheduledTime,
-          endTime,
-          meetingUrl,
-          cancelUrl,
-          rescheduleUrl,
-          hostName: calendlyHostName,
-        }).catch(() => {});
-
-        res.status(200).json({ received: true, bookingCreated: true, source: "pre-login" });
+        // Unknown UTM — untracked booking, ignore gracefully
+        console.log(`ℹ️ Untracked booking (UTM: ${utmTerm || 'none'}) — no action taken`);
+        res.status(200).json({ received: true, message: "Untracked booking" });
         break;
       }
 
       case "invitee.canceled": {
         const canceledInviteeUri = event.payload.uri;
 
-        // First, try to find and update pending booking
-        const booking = await PendingBooking.findOneAndUpdate(
-          { calendlyInviteeUri: canceledInviteeUri },
-          { status: "canceled" }
-        );
-
-        if (booking) {
-          console.log(`❌ Marked pending booking as canceled: ${canceledInviteeUri}`);
-        }
-
-        // Also find and update any patient with this meeting
+        // Find and update any patient with this meeting
         const patient = await PatientSchema.findOne({
           $or: [
             { "calendly.inviteeUri": canceledInviteeUri },
@@ -1176,29 +1155,18 @@ export const handleCalendlyWebhook = async (
           }
         }
 
-        // Also handle linked user from pending booking
-        if (booking?.linkedUserId && (!patient || patient._id?.toString() !== booking.linkedUserId.toString())) {
-          await PatientSchema.findByIdAndUpdate(booking.linkedUserId, {
-            "calendly.meetingStatus": "none",
-            "calendly.scheduledMeetingTime": null,
-            "calendly.eventUri": null,
-            "calendly.inviteeUri": null,
-          });
-          console.log(`🧹 Cleared meeting data for linked patient: ${booking.linkedUserId}`);
-        }
-
-        // Send cancellation email (fire-and-forget)
-        const canceledPatient = patient || providerPatient;
-        const cancelEmail = canceledPatient?.email || booking?.inviteeEmail;
-        const cancelName = canceledPatient?.given_name || canceledPatient?.name || booking?.inviteeName || event.payload.name;
-        if (cancelEmail) {
-          sendBookingCancellation({
-            to: cancelEmail,
-            patientName: cancelName || 'Patient',
-            eventName: event.payload.scheduled_event.name || 'Konsultation',
-            scheduledTime: new Date(event.payload.scheduled_event.start_time),
-          }).catch(() => {});
-        }
+        // Cancellation email — Calendly already notifies both invitee and host
+        // const canceledPatient = patient || providerPatient;
+        // const cancelEmail = canceledPatient?.email;
+        // const cancelName = canceledPatient?.given_name || canceledPatient?.name || event.payload.name;
+        // if (cancelEmail) {
+        //   sendBookingCancellation({
+        //     to: cancelEmail,
+        //     patientName: cancelName || 'Patient',
+        //     eventName: event.payload.scheduled_event.name || 'Konsultation',
+        //     scheduledTime: new Date(event.payload.scheduled_event.start_time),
+        //   }).catch(() => {});
+        // }
 
         res.status(200).json({ received: true, bookingCanceled: true });
         break;

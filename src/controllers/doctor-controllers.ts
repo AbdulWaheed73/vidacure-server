@@ -507,6 +507,122 @@ export async function getDoctorProfile(
   }
 }
 
+// Get unassigned patients (no doctor assigned, have questionnaire data)
+export async function getUnassignedPatients(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const doctorId = req.user?.userId;
+
+    if (!doctorId) {
+      res.status(401).json({ error: "User not authenticated" });
+      return;
+    }
+
+    const patients = await PatientSchema.find({
+      doctor: null,
+      "questionnaire.0": { $exists: true }
+    })
+      .select("name given_name family_name email dateOfBirth gender createdAt")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    await auditDatabaseOperation(req, "get_unassigned_patients", "READ", doctorId, {
+      count: patients.length
+    });
+
+    const formattedPatients = patients.map((patient) => ({
+      id: patient._id?.toString() ?? "",
+      name: patient.name,
+      givenName: patient.given_name,
+      familyName: patient.family_name,
+      email: patient.email ?? null,
+      dateOfBirth: patient.dateOfBirth ? new Date(patient.dateOfBirth).toISOString() : null,
+      gender: patient.gender ?? null,
+      height: null,
+      bmi: null,
+      createdAt: patient.createdAt ? new Date(patient.createdAt).toISOString() : null,
+      updatedAt: null
+    }));
+
+    res.status(200).json({ patients: formattedPatients });
+  } catch (error) {
+    console.error("Error fetching unassigned patients:", error);
+    await auditDatabaseError(req, "get_unassigned_patients", "READ", error, req.user?.userId);
+    res.status(500).json({
+      error: "Internal server error",
+      details: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+}
+
+// Get questionnaire for an unassigned patient
+export async function getUnassignedPatientQuestionnaire(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const doctorId = req.user?.userId;
+    const { patientId } = req.params;
+
+    if (!doctorId) {
+      res.status(401).json({ error: "User not authenticated" });
+      return;
+    }
+
+    if (!patientId || !Types.ObjectId.isValid(patientId)) {
+      res.status(400).json({ error: "A valid patientId is required" });
+      return;
+    }
+
+    const patient = await PatientSchema.findOne({
+      _id: patientId,
+      doctor: null
+    })
+      .select("questionnaire")
+      .lean();
+
+    if (!patient) {
+      await auditDatabaseError(
+        req,
+        "get_unassigned_patient_questionnaire",
+        "READ",
+        new Error("Patient not found or already assigned"),
+        patientId
+      );
+      res.status(404).json({ error: "Patient not found or already assigned to a doctor" });
+      return;
+    }
+
+    await auditDatabaseOperation(req, "get_unassigned_patient_questionnaire", "READ", patientId, {
+      viewedBy: doctorId
+    });
+
+    const questionnaire = Array.isArray(patient.questionnaire)
+      ? patient.questionnaire.map((entry) => ({
+          questionId: entry.questionId,
+          answer: entry.answer ?? ""
+        }))
+      : [];
+
+    res.status(200).json({ questionnaire });
+  } catch (error) {
+    console.error("Error fetching unassigned patient questionnaire:", error);
+    await auditDatabaseError(
+      req,
+      "get_unassigned_patient_questionnaire",
+      "READ",
+      error,
+      req.params?.patientId
+    );
+    res.status(500).json({
+      error: "Internal server error",
+      details: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+}
+
 // Get doctor inbox/messages
 // export async function getDoctorInbox(
 //   req: AuthenticatedRequest,

@@ -181,4 +181,10 @@ const PatientSchema: Schema = new Schema(
   { timestamps: true }
 );
 
+// Indexes for fast env-scoped doctor meeting lookups (see getDoctorOwnMeetings).
+// Multikey indexes on the embedded meeting arrays let Mongo resolve
+// $in queries against eventUri in O(log n) instead of a collection scan.
+PatientSchema.index({ "calendly.meetings.eventUri": 1 });
+PatientSchema.index({ "providerMeetings.eventUri": 1 });
+
 export default mongoose.model<PatientT & Document>("Patient", PatientSchema);
