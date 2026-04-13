@@ -539,7 +539,7 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
     }
 
     // Validate count parameter
-    let meetingCount = 5; // default
+    let meetingCount = 10; // default
     if (count) {
       const parsedCount = Number(count);
       if (isNaN(parsedCount) || parsedCount < 1 || parsedCount > 100) {
@@ -957,8 +957,8 @@ export const handleCalendlyWebhook = async (
             return;
           }
           if (!provider) {
-            console.error(`❌ Provider not found for webhook: ${providerId}`);
-            res.status(500).json({ error: "Provider not found - retry needed" });
+            console.error(`❌ Provider not found for webhook: ${providerId} — acking to stop retries`);
+            res.status(200).json({ ignored: "provider not found", providerId });
             return;
           }
 

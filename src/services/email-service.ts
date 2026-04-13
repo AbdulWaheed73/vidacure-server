@@ -583,3 +583,152 @@ export const sendBookingCancellation = async (
     console.error("Failed to send booking cancellation email:", err);
   }
 };
+
+// ── Hypnotherapist Purchase Emails ──
+
+type HypnotherapistNotificationParams = {
+  patientName: string;
+  patientEmail: string;
+  purchasedAt: Date;
+};
+
+export const sendHypnotherapistNotification = async (
+  params: HypnotherapistNotificationParams
+): Promise<void> => {
+  const to = process.env.HYPNOTHERAPIST_EMAIL;
+  if (!to) {
+    console.error("HYPNOTHERAPIST_EMAIL env var not set, skipping notification");
+    return;
+  }
+  const from = process.env.RESEND_FROM_EMAIL || "info@vidacure.se";
+
+  const formattedDate = new Intl.DateTimeFormat("sv-SE", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(params.purchasedAt));
+
+  const html = `
+<!DOCTYPE html>
+<html lang="sv">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
+<body style="margin:0;padding:0;background-color:#f0f7f4;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f7f4;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+        <tr><td style="background-color:#005044;padding:32px;text-align:center;">
+          <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Nytt köp – Mind-Body Recode-programmet</h1>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 16px;font-size:15px;color:#333;">En ny patient har köpt Mind-Body Recode-programmet. Vänligen kontakta patienten för att boka den första sessionen.</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8faf9;border-radius:8px;padding:20px;margin-bottom:24px;">
+            <tr><td>
+              <p style="margin:0 0 8px;font-size:14px;color:#666;">Patientens namn</p>
+              <p style="margin:0 0 16px;font-size:16px;color:#282828;font-weight:600;">${params.patientName}</p>
+              <p style="margin:0 0 8px;font-size:14px;color:#666;">Patientens e-post</p>
+              <p style="margin:0 0 16px;font-size:16px;color:#282828;font-weight:600;">${params.patientEmail}</p>
+              <p style="margin:0 0 8px;font-size:14px;color:#666;">Köpdatum</p>
+              <p style="margin:0;font-size:16px;color:#282828;font-weight:600;">${formattedDate}</p>
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="padding:0 32px 32px;text-align:center;">
+          <p style="margin:0;font-size:12px;color:#999;">Detta är ett automatiskt meddelande från Vidacure.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  try {
+    const { error } = await resend.emails.send({
+      from,
+      to,
+      subject: `Nytt köp – Mind-Body Recode-programmet – ${params.patientName}`,
+      html,
+    });
+
+    if (error) {
+      console.error("Resend API error sending hypnotherapist notification:", error);
+    } else {
+      console.log("Hypnotherapist notification sent to:", to);
+    }
+  } catch (err) {
+    console.error("Failed to send hypnotherapist notification:", err);
+  }
+};
+
+type HypnotherapistReceiptParams = {
+  to: string;
+  patientName: string;
+  purchasedAt: Date;
+};
+
+export const sendHypnotherapistReceipt = async (
+  params: HypnotherapistReceiptParams
+): Promise<void> => {
+  const to = params.to;
+  const from = process.env.RESEND_FROM_EMAIL || "info@vidacure.se";
+
+  const formattedDate = new Intl.DateTimeFormat("sv-SE", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(new Date(params.purchasedAt));
+
+  const html = `
+<!DOCTYPE html>
+<html lang="sv">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
+<body style="margin:0;padding:0;background-color:#f0f7f4;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f7f4;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+        <tr><td style="background-color:#005044;padding:32px;text-align:center;">
+          <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Orderbekräftelse</h1>
+          <p style="margin:8px 0 0;color:#cceee8;font-size:14px;">Mind-Body Recode-programmet</p>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 16px;font-size:15px;color:#333;">Hej ${params.patientName},</p>
+          <p style="margin:0 0 24px;font-size:15px;color:#333;line-height:1.6;">Tack för ditt köp av Mind-Body Recode-programmet! Giedre kommer att kontakta dig inom kort för att boka din första session.</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8faf9;border-radius:8px;padding:20px;margin-bottom:24px;">
+            <tr><td>
+              <p style="margin:0 0 8px;font-size:14px;color:#666;">Program</p>
+              <p style="margin:0 0 16px;font-size:16px;color:#282828;font-weight:600;">Mind-Body Recode-programmet</p>
+              <p style="margin:0 0 8px;font-size:14px;color:#666;">Belopp</p>
+              <p style="margin:0 0 16px;font-size:16px;color:#282828;font-weight:600;">5 400 SEK</p>
+              <p style="margin:0 0 8px;font-size:14px;color:#666;">Datum</p>
+              <p style="margin:0;font-size:16px;color:#282828;font-weight:600;">${formattedDate}</p>
+            </td></tr>
+          </table>
+          <p style="margin:0;font-size:13px;color:#999;line-height:1.5;">Programmet inkluderar introduktionsmöte, RTT®-session, individualiserad ljudinspelning, coachingsessioner och uppföljning.</p>
+        </td></tr>
+        <tr><td style="padding:0 32px 32px;text-align:center;">
+          <p style="margin:0;font-size:12px;color:#999;">Vidacure · vidacure.se</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  try {
+    const { error } = await resend.emails.send({
+      from,
+      to,
+      subject: "Orderbekräftelse – Mind-Body Recode-programmet – Vidacure",
+      html,
+    });
+
+    if (error) {
+      console.error("Resend API error sending hypnotherapist receipt:", error);
+    } else {
+      console.log("Hypnotherapist receipt sent to:", to);
+    }
+  } catch (err) {
+    console.error("Failed to send hypnotherapist receipt:", err);
+  }
+};

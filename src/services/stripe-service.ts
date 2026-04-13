@@ -168,8 +168,9 @@ export const stripeService = {
     successUrl: string;
     cancelUrl: string;
     metadata: Record<string, string>;
+    createInvoice?: boolean;
   }) => {
-    const { customerId, priceId, successUrl, cancelUrl, metadata } = params;
+    const { customerId, priceId, successUrl, cancelUrl, metadata, createInvoice } = params;
 
     return await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -185,6 +186,7 @@ export const stripeService = {
       cancel_url: cancelUrl,
       metadata,
       allow_promotion_codes: true,
+      ...(createInvoice ? { invoice_creation: { enabled: true } } : {}),
     });
   },
 
@@ -331,6 +333,7 @@ export const stripeService = {
       customer: customerId,
       limit,
       status: 'complete',
+      expand: ['data.payment_intent.latest_charge', 'data.invoice'],
     });
     // Only return one-time payment sessions (not subscription)
     return sessions.data.filter(s => s.mode === 'payment');

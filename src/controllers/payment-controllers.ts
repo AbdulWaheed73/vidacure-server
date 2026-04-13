@@ -6,7 +6,7 @@ import LabTestOrder from "../schemas/lab-test-order-schema";
 import Stripe from "stripe";
 import { assignDoctorRoundRobin } from "../services/doctor-assignment-service";
 import { placeLabTestOrderForPatient } from "../services/lab-test-order-service";
-import { sendLabTestOrderConfirmation } from "../services/email-service";
+import { sendLabTestOrderConfirmation, sendHypnotherapistNotification, sendHypnotherapistReceipt } from "../services/email-service";
 import { LAB_TEST_PACKAGES } from "../config/lab-test-packages";
 import type { CancellationReason } from "../types/cancellation-feedback-type";
 
@@ -574,6 +574,10 @@ export const changePlan = async (
           ],
           success_url: `${frontendUrl}/account?plan_changed=true`,
           cancel_url: `${frontendUrl}/account`,
+          // Enable Invoice creation so the receipt resolves to a proper
+          // hosted invoice URL (invoice.stripe.com/i/...) instead of falling
+          // back to a plain payment receipt (pay.stripe.com/receipts/...).
+          invoice_creation: { enabled: true },
           metadata: {
             type: "plan_change",
             userId: userId.toString(),
@@ -646,29 +650,63 @@ export const getInvoiceHistory = async (
       stripeService.getCustomerCheckoutPayments(patient.subscription.stripeCustomerId),
     ]);
 
-    const mappedInvoices = invoices.map((invoice) => ({
-      id: invoice.id,
-      date: new Date(invoice.created * 1000).toISOString(),
-      amount: invoice.amount_paid,
-      currency: invoice.currency,
-      status: invoice.status,
-      planType: invoice.lines?.data?.[0]?.metadata?.planType || patient.subscription?.planType || null,
-      label: null,
-      invoicePdf: invoice.invoice_pdf || null,
-      receiptUrl: invoice.hosted_invoice_url || null,
-    }));
+    // Build a map of invoice IDs linked to checkout sessions so we can
+    // enrich auto-generated invoices with the session's label and skip the
+    // session entry (avoids duplicates in the billing history).
+    const sessionByInvoiceId = new Map<string, Stripe.Checkout.Session>();
+    for (const session of checkoutPayments) {
+      const linkedInvoice = session.invoice as Stripe.Invoice | string | null;
+      const invoiceId = typeof linkedInvoice === 'string' ? linkedInvoice : linkedInvoice?.id;
+      if (invoiceId) sessionByInvoiceId.set(invoiceId, session);
+    }
 
-    const mappedPayments = checkoutPayments.map((session) => ({
-      id: session.id,
-      date: new Date(session.created * 1000).toISOString(),
-      amount: session.amount_total || 0,
-      currency: session.currency || 'sek',
-      status: 'paid',
-      planType: null,
-      label: session.metadata?.type === 'lab_test' ? 'Lab Test' : (session.line_items?.data?.[0]?.description || 'One-time payment'),
-      invoicePdf: null,
-      receiptUrl: session.url,
-    }));
+    const sessionLabel = (session: Stripe.Checkout.Session) =>
+      session.metadata?.type === 'lab_test'
+        ? 'Lab Test'
+        : session.metadata?.type === 'hypnotherapist'
+          ? 'Mind-Body Recode Program'
+          : (session.line_items?.data?.[0]?.description || 'One-time payment');
+
+    const mappedInvoices = invoices.map((invoice) => {
+      const linkedSession = invoice.id ? sessionByInvoiceId.get(invoice.id) : undefined;
+      return {
+        id: invoice.id,
+        date: new Date(invoice.created * 1000).toISOString(),
+        amount: invoice.amount_paid,
+        currency: invoice.currency,
+        status: invoice.status,
+        planType: linkedSession
+          ? null
+          : invoice.lines?.data?.[0]?.metadata?.planType || patient.subscription?.planType || null,
+        label: linkedSession ? sessionLabel(linkedSession) : null,
+        invoicePdf: invoice.invoice_pdf || null,
+        receiptUrl: invoice.hosted_invoice_url || null,
+      };
+    });
+
+    // Only include checkout sessions that did NOT produce an invoice
+    // (otherwise they'd duplicate the entry already in mappedInvoices).
+    const mappedPayments = checkoutPayments
+      .filter((session) => {
+        const linkedInvoice = session.invoice as Stripe.Invoice | string | null;
+        const invoiceId = typeof linkedInvoice === 'string' ? linkedInvoice : linkedInvoice?.id;
+        return !invoiceId;
+      })
+      .map((session) => {
+        const paymentIntent = session.payment_intent as Stripe.PaymentIntent | null;
+        const latestCharge = paymentIntent?.latest_charge as Stripe.Charge | null;
+        return {
+          id: session.id,
+          date: new Date(session.created * 1000).toISOString(),
+          amount: session.amount_total || 0,
+          currency: session.currency || 'sek',
+          status: 'paid',
+          planType: null,
+          label: sessionLabel(session),
+          invoicePdf: null,
+          receiptUrl: latestCharge?.receipt_url || null,
+        };
+      });
 
     const all = [...mappedInvoices, ...mappedPayments].sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -1332,6 +1370,168 @@ export const handleLabTestSessionExpired = async (
   } catch (error) {
     logCriticalWebhookError("handleLabTestSessionExpired", error, {
       sessionId: session?.id,
+    });
+  }
+};
+
+// ── Hypnotherapist One-Time Purchase ──
+
+export const createHypnotherapistCheckout = async (
+  req: express.Request,
+  res: express.Response
+): Promise<void> => {
+  try {
+    const userId = (req as any).user?.userId;
+    if (!userId) {
+      res.status(401).json({ error: "User not authenticated" });
+      return;
+    }
+
+    const patient = await PatientSchema.findById(userId);
+    if (!patient) {
+      res.status(404).json({ error: "Patient not found" });
+      return;
+    }
+
+    if (patient.hypnotherapistPurchase?.status === "completed") {
+      res.status(400).json({ error: "You have already purchased this program" });
+      return;
+    }
+
+    // Get or create Stripe customer (same pattern as subscription checkout)
+    let customerId = patient.subscription?.stripeCustomerId;
+    if (!customerId) {
+      const customer = await stripeService.createCustomer(
+        patient.email,
+        patient.name,
+        { userId: userId.toString() }
+      );
+      customerId = customer.id;
+
+      if (!patient.subscription) {
+        patient.subscription = {
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: "",
+          stripePriceId: "",
+          stripeProductId: "",
+          status: "incomplete",
+          planType: "lifestyle",
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: new Date(),
+          cancelAtPeriodEnd: false,
+        };
+      } else {
+        patient.subscription.stripeCustomerId = customerId;
+      }
+      await patient.save();
+    }
+
+    const frontendUrl = getFrontendUrl();
+    if (!frontendUrl) {
+      res.status(500).json({ error: "Server configuration error" });
+      return;
+    }
+
+    const priceId = process.env.STRIPE_PRICE_HYPNOTHERAPIST;
+    if (!priceId) {
+      res.status(500).json({ error: "Hypnotherapist price not configured" });
+      return;
+    }
+
+    const session = await stripeService.createLabTestCheckoutSession({
+      customerId,
+      priceId,
+      successUrl: `${frontendUrl}/subscribe/hypnotherapist/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${frontendUrl}/subscribe/hypnotherapist`,
+      metadata: {
+        type: "hypnotherapist",
+        userId: userId.toString(),
+      },
+      createInvoice: true,
+    });
+
+    // Save pending purchase — amount comes from the Stripe session (set by Stripe price)
+    patient.hypnotherapistPurchase = {
+      stripeCheckoutSessionId: session.id,
+      stripePaymentIntentId: "",
+      amount: session.amount_total || 0,
+      currency: session.currency || "sek",
+      status: "pending",
+      purchasedAt: new Date(),
+    };
+    await patient.save();
+
+    res.json({ sessionId: session.id, url: session.url });
+  } catch (error: any) {
+    console.error("Error creating hypnotherapist checkout:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const handleHypnotherapistPaymentCompleted = async (
+  session: Stripe.Checkout.Session
+): Promise<void> => {
+  try {
+    const userId = session.metadata?.userId;
+    if (!userId) {
+      console.error("Missing userId in hypnotherapist checkout metadata");
+      return;
+    }
+
+    const patient = await PatientSchema.findById(userId);
+    if (!patient) {
+      console.error("Patient not found for hypnotherapist payment:", userId);
+      return;
+    }
+
+    // Idempotency
+    if (patient.hypnotherapistPurchase?.status === "completed") {
+      console.log("Hypnotherapist purchase already completed, skipping:", userId);
+      return;
+    }
+
+    if (!patient.hypnotherapistPurchase) {
+      patient.hypnotherapistPurchase = {
+        stripeCheckoutSessionId: session.id,
+        stripePaymentIntentId: (session.payment_intent as string) || "",
+        amount: session.amount_total || 0,
+        currency: session.currency || "sek",
+        status: "completed",
+        purchasedAt: new Date(),
+      };
+    } else {
+      patient.hypnotherapistPurchase.status = "completed";
+      patient.hypnotherapistPurchase.stripePaymentIntentId =
+        (session.payment_intent as string) || "";
+      patient.hypnotherapistPurchase.purchasedAt = new Date();
+    }
+    await patient.save();
+
+    // Send notification to hypnotherapist (fire-and-forget)
+    sendHypnotherapistNotification({
+      patientName: patient.name,
+      patientEmail: patient.email || "",
+      purchasedAt: new Date(),
+    }).catch((err) =>
+      console.error("Failed to send hypnotherapist notification:", err)
+    );
+
+    // Send receipt to patient (fire-and-forget)
+    if (patient.email) {
+      sendHypnotherapistReceipt({
+        to: patient.email,
+        patientName: patient.name,
+        purchasedAt: new Date(),
+      }).catch((err) =>
+        console.error("Failed to send hypnotherapist receipt:", err)
+      );
+    }
+
+    console.log("Hypnotherapist payment completed for patient:", userId);
+  } catch (error) {
+    logCriticalWebhookError("handleHypnotherapistPaymentCompleted", error, {
+      sessionId: session?.id,
+      customerId: session?.customer,
     });
   }
 };

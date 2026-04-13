@@ -89,6 +89,18 @@ const PatientSchema: Schema = new Schema(
       trialEnd: { type: Date }
     },
 
+    hypnotherapistPurchase: {
+      stripePaymentIntentId: { type: String },
+      stripeCheckoutSessionId: { type: String },
+      amount: { type: Number },
+      currency: { type: String },
+      status: {
+        type: String,
+        enum: ["pending", "completed", "failed"]
+      },
+      purchasedAt: { type: Date },
+    },
+
     questionnaire: [
       {
         questionId: { type: String, required: true },

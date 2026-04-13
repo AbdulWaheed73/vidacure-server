@@ -19,6 +19,8 @@ import {
   handleLabTestPaymentCompleted,
   handleLabTestSessionExpired,
   handlePlanChangeCompleted,
+  createHypnotherapistCheckout,
+  handleHypnotherapistPaymentCompleted,
 } from "../controllers/payment-controllers";
 import { submitCancellationFeedback } from "../controllers/cancellation-feedback-controller";
 import { requireAuth, requireCSRF, requireRole } from "../middleware/auth-middleware";
@@ -45,6 +47,8 @@ router.post("/create-portal-session", paymentRateLimiter, requireAuth, auditMidd
 
 router.get("/invoices", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), getInvoiceHistory);
 
+router.post("/hypnotherapist-checkout", paymentRateLimiter, requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), createHypnotherapistCheckout);
+
 router.post("/webhook", express.raw({ type: 'application/json' }), async (req: express.Request, res: express.Response) => {
   const signature = req.headers['stripe-signature'] as string;
 
@@ -67,6 +71,8 @@ router.post("/webhook", express.raw({ type: 'application/json' }), async (req: e
           await handlePlanChangeCompleted(session);
         } else if (session.mode === 'payment' && session.metadata?.type === 'lab_test') {
           await handleLabTestPaymentCompleted(session);
+        } else if (session.mode === 'payment' && session.metadata?.type === 'hypnotherapist') {
+          await handleHypnotherapistPaymentCompleted(session);
         }
         break;
       }

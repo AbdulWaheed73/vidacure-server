@@ -66,6 +66,15 @@ export type PatientT = {
     trialEnd?: Date;
   };
 
+  hypnotherapistPurchase?: {
+    stripePaymentIntentId: string;
+    stripeCheckoutSessionId: string;
+    amount: number;
+    currency: string;
+    status: "pending" | "completed" | "failed";
+    purchasedAt: Date;
+  };
+
   questionnaire: {
     questionId: string;
     answer: string;

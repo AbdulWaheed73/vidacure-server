@@ -177,9 +177,16 @@ export async function getScheduledEvents(userUri: string, filters: {
   maxStartTime?: string;
   pageToken?: string;
 } = {}) {
-  // Use user's filter if provided, otherwise fall back to launch date
-  const minStartTime = filters.minStartTime || CALENDLY_LAUNCH_DATE;
+  // Clamp min_start_time: if caller didn't provide one, or provided a date
+  // earlier than the launch date, use the launch date. Otherwise honor it.
+  const minStartTime =
+    filters.minStartTime && filters.minStartTime >= CALENDLY_LAUNCH_DATE
+      ? filters.minStartTime
+      : CALENDLY_LAUNCH_DATE;
 
+  // Calendly requires the full set of filters to be repeated on every
+  // paginated call — the page_token is tied to the query signature and
+  // is rejected if the filters don't match the original call.
   const params: any = {
     user: userUri,
     min_start_time: minStartTime,
@@ -187,8 +194,10 @@ export async function getScheduledEvents(userUri: string, filters: {
     ...(filters.sort && { sort: filters.sort }),
     ...(filters.count && { count: filters.count.toString() }),
     ...(filters.maxStartTime && { max_start_time: filters.maxStartTime }),
-    ...(filters.pageToken && { page_token: filters.pageToken })
+    ...(filters.pageToken && { page_token: filters.pageToken }),
   };
+
+  console.log('🔍 Calendly getScheduledEvents params:', JSON.stringify(params));
 
   const response = await makeCalendlyRequest('/scheduled_events', {
     params
