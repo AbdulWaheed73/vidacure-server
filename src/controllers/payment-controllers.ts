@@ -650,11 +650,20 @@ export const getInvoiceHistory = async (
       stripeService.getCustomerCheckoutPayments(patient.subscription.stripeCustomerId),
     ]);
 
-    // Build a map of invoice IDs linked to checkout sessions so we can
-    // enrich auto-generated invoices with the session's label and skip the
-    // session entry (avoids duplicates in the billing history).
+    // Match sessions to invoices via payment_intent (populated synchronously
+    // on both sides). `session.invoice` is created asynchronously by Stripe
+    // when `invoice_creation` is enabled, so keying on it caused the same
+    // purchase to appear twice during the brief window before Stripe linked
+    // the invoice back onto the session.
+    const getPaymentIntentId = (
+      pi: Stripe.PaymentIntent | string | null | undefined
+    ) => (typeof pi === 'string' ? pi : pi?.id) || null;
+
+    const sessionByPaymentIntentId = new Map<string, Stripe.Checkout.Session>();
     const sessionByInvoiceId = new Map<string, Stripe.Checkout.Session>();
     for (const session of checkoutPayments) {
+      const piId = getPaymentIntentId(session.payment_intent as any);
+      if (piId) sessionByPaymentIntentId.set(piId, session);
       const linkedInvoice = session.invoice as Stripe.Invoice | string | null;
       const invoiceId = typeof linkedInvoice === 'string' ? linkedInvoice : linkedInvoice?.id;
       if (invoiceId) sessionByInvoiceId.set(invoiceId, session);
@@ -667,8 +676,21 @@ export const getInvoiceHistory = async (
           ? 'Mind-Body Recode Program'
           : (session.line_items?.data?.[0]?.description || 'One-time payment');
 
+    const findSessionForInvoice = (invoice: Stripe.Invoice) => {
+      const piId = getPaymentIntentId((invoice as any).payment_intent);
+      if (piId && sessionByPaymentIntentId.has(piId)) {
+        return sessionByPaymentIntentId.get(piId);
+      }
+      if (invoice.id && sessionByInvoiceId.has(invoice.id)) {
+        return sessionByInvoiceId.get(invoice.id);
+      }
+      return undefined;
+    };
+
+    const linkedSessionIds = new Set<string>();
     const mappedInvoices = invoices.map((invoice) => {
-      const linkedSession = invoice.id ? sessionByInvoiceId.get(invoice.id) : undefined;
+      const linkedSession = findSessionForInvoice(invoice);
+      if (linkedSession) linkedSessionIds.add(linkedSession.id);
       return {
         id: invoice.id,
         date: new Date(invoice.created * 1000).toISOString(),
@@ -684,14 +706,10 @@ export const getInvoiceHistory = async (
       };
     });
 
-    // Only include checkout sessions that did NOT produce an invoice
-    // (otherwise they'd duplicate the entry already in mappedInvoices).
+    // Only include checkout sessions that were NOT already paired with an
+    // invoice above (otherwise they'd duplicate the entry in mappedInvoices).
     const mappedPayments = checkoutPayments
-      .filter((session) => {
-        const linkedInvoice = session.invoice as Stripe.Invoice | string | null;
-        const invoiceId = typeof linkedInvoice === 'string' ? linkedInvoice : linkedInvoice?.id;
-        return !invoiceId;
-      })
+      .filter((session) => !linkedSessionIds.has(session.id))
       .map((session) => {
         const paymentIntent = session.payment_intent as Stripe.PaymentIntent | null;
         const latestCharge = paymentIntent?.latest_charge as Stripe.Charge | null;

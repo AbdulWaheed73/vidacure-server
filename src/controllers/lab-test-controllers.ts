@@ -275,6 +275,7 @@ export const createLabTestCheckoutSession = async (
         testPackageId: testPackage.id,
         orderId: order._id!.toString(),
       },
+      createInvoice: true,
     });
 
     // Store checkout session ID on the order
