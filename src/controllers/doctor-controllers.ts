@@ -221,7 +221,7 @@ export async function getDoctorPatients(
     }
 
     const patients = await PatientSchema.find({ doctor: doctorId })
-      .select("name given_name family_name email dateOfBirth gender height bmi createdAt updatedAt")
+      .select("name given_name family_name email dateOfBirth gender height bmi createdAt updatedAt subscription.status subscription.planType")
       .sort({ name: 1 })
       .lean();
 
@@ -240,7 +240,9 @@ export async function getDoctorPatients(
       height: patient.height ?? null,
       bmi: patient.bmi ?? null,
       createdAt: patient.createdAt ? new Date(patient.createdAt).toISOString() : null,
-      updatedAt: patient.updatedAt ? new Date(patient.updatedAt).toISOString() : null
+      updatedAt: patient.updatedAt ? new Date(patient.updatedAt).toISOString() : null,
+      subscriptionStatus: patient.subscription?.status ?? null,
+      subscriptionPlan: patient.subscription?.planType ?? null
     }));
 
     res.status(200).json({
@@ -524,7 +526,7 @@ export async function getUnassignedPatients(
       doctor: null,
       "questionnaire.0": { $exists: true }
     })
-      .select("name given_name family_name email dateOfBirth gender createdAt")
+      .select("name given_name family_name email dateOfBirth gender createdAt subscription.status subscription.planType")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -543,7 +545,9 @@ export async function getUnassignedPatients(
       height: null,
       bmi: null,
       createdAt: patient.createdAt ? new Date(patient.createdAt).toISOString() : null,
-      updatedAt: null
+      updatedAt: null,
+      subscriptionStatus: patient.subscription?.status ?? null,
+      subscriptionPlan: patient.subscription?.planType ?? null
     }));
 
     res.status(200).json({ patients: formattedPatients });
