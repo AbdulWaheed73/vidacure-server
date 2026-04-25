@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from "../types/generic-types";
 import DoctorSchema from "../schemas/doctor-schema";
 import PatientSchema from "../schemas/patient-schema";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
+import { decryptSSN } from "../services/auth-service";
 
 // Get doctor dashboard data
 export async function getDoctorDashboard(
@@ -365,6 +366,16 @@ export async function getPatientProfile(
         }
       : null;
 
+    if (!patient.encryptedSsn) {
+      res.status(500).json({ error: "Patient SSN is missing" });
+      return;
+    }
+    const decryptedSsn = decryptSSN(patient.encryptedSsn);
+    await auditDatabaseOperation(req, "ssn_revealed", "READ", patientId, {
+      accessedBy: "doctor",
+      context: "patient_profile_view"
+    });
+
     res.status(200).json({
       patientProfile: {
         id: patient._id?.toString() ?? patientId,
@@ -372,6 +383,7 @@ export async function getPatientProfile(
         givenName: patient.given_name,
         familyName: patient.family_name,
         email: patient.email ?? null,
+        ssn: decryptedSsn,
         dateOfBirth: patient.dateOfBirth ? new Date(patient.dateOfBirth).toISOString() : null,
         gender: patient.gender ?? null,
         height: patient.height ?? null,
