@@ -243,28 +243,6 @@ export const createCheckoutSession = async (
       return res.status(404).json({ error: "Patient not found" });
     }
 
-    // Check meeting gate - must have completed consultation before subscribing
-    const meetingStatus = patient.calendly?.meetingStatus || "none";
-    const scheduledMeetingTime = patient.calendly?.scheduledMeetingTime;
-
-    // Meeting gate is passed if:
-    // 1. Meeting is marked as completed, OR
-    // 2. Meeting is scheduled AND the scheduled time has passed
-    const isMeetingGatePassed =
-      meetingStatus === "completed" ||
-      (meetingStatus === "scheduled" &&
-        scheduledMeetingTime &&
-        new Date() > new Date(scheduledMeetingTime));
-
-    if (!isMeetingGatePassed) {
-      return res.status(403).json({
-        error: "Meeting required",
-        message: "You must complete a consultation with your doctor before subscribing",
-        meetingStatus,
-        scheduledMeetingTime,
-      });
-    }
-
     const frontendUrl = getFrontendUrl();
 
     // Validate frontend URL is set

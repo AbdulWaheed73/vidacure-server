@@ -25,33 +25,10 @@ export const getMeetingStatus = async (req: AuthenticatedRequest, res: Response)
       return;
     }
 
-    // Check if meeting gate is passed
-    let meetingStatus = patient.calendly?.meetingStatus || "none";
+    const meetingStatus = patient.calendly?.meetingStatus || "none";
     const scheduledMeetingTime = patient.calendly?.scheduledMeetingTime;
     const meetings = patient.calendly?.meetings || [];
 
-    // Gate is permanently passed if:
-    // 1. meetingStatus is "completed", OR
-    // 2. Patient already has completed meetings (completedAt exists), OR
-    // 3. Patient has 2+ meetings (they've clearly been through the process)
-    let isMeetingGatePassed =
-      meetingStatus === "completed" ||
-      !!patient.calendly?.completedAt ||
-      meetings.length >= 2;
-
-    // Auto-complete if scheduled meeting time + 30 min has passed
-    if (!isMeetingGatePassed && meetingStatus === "scheduled" && scheduledMeetingTime && patient.calendly) {
-      const meetingEndTime = new Date(scheduledMeetingTime).getTime() + (30 * 60 * 1000);
-      if (Date.now() > meetingEndTime) {
-        patient.calendly.meetingStatus = "completed";
-        patient.calendly.completedAt = new Date();
-        await patient.save();
-        meetingStatus = "completed";
-        isMeetingGatePassed = true;
-      }
-    }
-
-    // Get meeting URL for the current scheduled meeting
     const currentMeeting = meetings.find(m =>
       scheduledMeetingTime && new Date(m.scheduledTime).getTime() === new Date(scheduledMeetingTime).getTime()
     );
@@ -61,7 +38,7 @@ export const getMeetingStatus = async (req: AuthenticatedRequest, res: Response)
       meetingStatus,
       scheduledMeetingTime,
       completedAt: patient.calendly?.completedAt,
-      isMeetingGatePassed,
+      isMeetingGatePassed: true,
       meetingUrl: currentMeeting?.meetingUrl || '',
     });
   } catch (error) {
