@@ -5,6 +5,7 @@ import { AuthenticatedRequest } from "../types/generic-types";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
 import { sendWelcomeEmail } from "../services/email-service";
 import { Types } from "mongoose";
+import { isValidSwedishPhone, normalizeSwedishPhone } from "../utils/phone-validator";
 
 export const getAllPatients = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
@@ -31,13 +32,18 @@ export const getAllPatients = async (req: AuthenticatedRequest, res: Response): 
 // Submit questionnaire answers
 export const submitQuestionnaire = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { questionnaire } = req.body;
+    const { questionnaire, phone } = req.body;
     const userId = req.user?.userId;
     console.log("user ID: ", userId);
 
 
     if (!questionnaire || !Array.isArray(questionnaire)) {
       res.status(400).json({ error: "Invalid questionnaire format" });
+      return;
+    }
+
+    if (!phone || typeof phone !== "string" || !isValidSwedishPhone(phone)) {
+      res.status(400).json({ error: "A valid Swedish phone number is required" });
       return;
     }
 
@@ -64,7 +70,8 @@ export const submitQuestionnaire = async (req: AuthenticatedRequest, res: Respon
 
     // Update questionnaire
     patient.questionnaire = questionnaire;
-    
+    patient.phone = normalizeSwedishPhone(phone);
+
     // Mark onboarding as completed when questionnaire is submitted
     patient.hasCompletedOnboarding = true;
     
@@ -347,6 +354,7 @@ export const getProfile = async (req: AuthenticatedRequest, res: Response): Prom
         givenName: patient.given_name,
         familyName: patient.family_name,
         email: patient.email,
+        phone: patient.phone || null,
         dateOfBirth: dateOfBirth,
         gender: patient.gender,
         height: patient.height,
@@ -368,7 +376,7 @@ export const getProfile = async (req: AuthenticatedRequest, res: Response): Prom
 // Update patient profile (e.g., email, height)
 export const updateProfile = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { email, height, goalWeight } = req.body;
+    const { email, height, goalWeight, phone } = req.body;
     const userId = req.user?.userId;
 // console.log("\n\n\nupdateProfile called with:", req.body);
     if (!userId) {
@@ -389,6 +397,15 @@ export const updateProfile = async (req: AuthenticatedRequest, res: Response): P
     // Update email if provided
     if (email !== undefined) {
       patient.email = email;
+    }
+
+    // Update phone if provided
+    if (phone !== undefined) {
+      if (typeof phone !== "string" || !isValidSwedishPhone(phone)) {
+        res.status(400).json({ error: "Invalid phone number. Must be a valid Swedish phone number" });
+        return;
+      }
+      patient.phone = normalizeSwedishPhone(phone);
     }
 
     // Update height (required field, in cm)
@@ -418,6 +435,7 @@ export const updateProfile = async (req: AuthenticatedRequest, res: Response): P
     await patient.save();
     await auditDatabaseOperation(req, "update_profile_save", "UPDATE", userId, {
       emailUpdated: email !== undefined,
+      phoneUpdated: phone !== undefined,
       heightUpdated: height !== undefined,
       goalWeightUpdated: goalWeight !== undefined
     });

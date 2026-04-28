@@ -383,6 +383,7 @@ export async function getPatientProfile(
         givenName: patient.given_name,
         familyName: patient.family_name,
         email: patient.email ?? null,
+        phone: patient.phone ?? null,
         ssn: decryptedSsn,
         dateOfBirth: patient.dateOfBirth ? new Date(patient.dateOfBirth).toISOString() : null,
         gender: patient.gender ?? null,
