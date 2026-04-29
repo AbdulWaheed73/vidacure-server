@@ -395,7 +395,12 @@ export const updateProfile = async (req: AuthenticatedRequest, res: Response): P
     await auditDatabaseOperation(req, "update_profile_find_patient", "READ", userId);
 
     // Update email if provided
-    if (email !== undefined) {
+    if (email !== undefined && email !== patient.email) {
+      const existing = await PatientSchema.findOne({ email, _id: { $ne: patient._id } }).select("_id");
+      if (existing) {
+        res.status(409).json({ error: "Email already in use" });
+        return;
+      }
       patient.email = email;
     }
 
