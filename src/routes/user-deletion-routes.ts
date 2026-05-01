@@ -9,7 +9,7 @@ import {
 import { exportMyData } from '../controllers/data-export-controller';
 import { getMySSN } from '../controllers/ssn-controller';
 import { requireAuth, requireCSRF } from '../middleware/auth-middleware';
-import { requireAdminAuth } from '../middleware/admin-auth-middleware';
+import { requireAdminAuth, requireAdminRole, requireAdminCSRF } from '../middleware/admin-auth-middleware';
 import { auditMiddleware } from '../middleware/audit-middleware';
 
 const router = express.Router();
@@ -70,10 +70,14 @@ router.post(
  */
 
 // DELETE /api/admin/users/:userId
-// Admins can delete any user account
+// Account deletion is irreversible (anonymize + retain) — keep on the lower
+// admin tier for now. Re-tighten to ['superadmin'] once the org has confirmed
+// at least one superadmin exists in production.
+// NOTE: requireAdminCSRF intentionally not wired (see admin-routes.ts comment).
 router.delete(
   '/admin/:userId',
   requireAdminAuth,
+  requireAdminRole(['admin', 'superadmin']),
   auditMiddleware,
   deleteUserByAdmin
 );
@@ -83,6 +87,7 @@ router.delete(
 router.get(
   '/admin/deletions',
   requireAdminAuth,
+  requireAdminRole(['admin', 'superadmin']),
   auditMiddleware,
   getDeletions
 );
@@ -92,6 +97,7 @@ router.get(
 router.get(
   '/admin/deletions/:deletionId',
   requireAdminAuth,
+  requireAdminRole(['admin', 'superadmin']),
   auditMiddleware,
   getDeletionById
 );

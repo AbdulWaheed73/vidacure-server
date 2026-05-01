@@ -1,5 +1,5 @@
 import express from "express";
-import { requireAdminAuth, requireAdminRole } from "../middleware/admin-auth-middleware";
+import { requireAdminAuth, requireAdminRole, requireAdminCSRF } from "../middleware/admin-auth-middleware";
 import {
   getDashboardStats,
   getAllPatients,
@@ -31,6 +31,11 @@ const router = express.Router();
 // All admin routes require admin authentication (admin_token)
 // Regular user tokens (app_token) are rejected
 router.use(requireAdminAuth);
+// NOTE: requireAdminCSRF is intentionally NOT wired here yet. The web admin
+// client (vidacure-web) currently reuses the patient/doctor CSRF token from
+// localStorage and does not read the admin_csrf_token cookie, so enabling
+// CSRF enforcement at this point would break the admin panel. Wire it in
+// once the web client sends admin_csrf_token as x-csrf-token for admin calls.
 router.use(requireAdminRole(['admin', 'superadmin']));
 
 // Dashboard statistics

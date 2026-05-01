@@ -127,6 +127,31 @@ export function requireAdminRole(allowedRoles: string | string[]) {
 }
 
 /**
+ * Admin CSRF protection (double-submit cookie).
+ * Compares admin_csrf_token cookie with x-csrf-token header.
+ * The admin token is issued by adminLogin / verifyAdmin2FA / confirmAdmin2FA.
+ * Admin sessions are cookie-only (no mobile Bearer flow), so no client-type bypass.
+ */
+export function requireAdminCSRF(
+  req: AdminAuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void {
+  const headerToken = req.headers["x-csrf-token"] as string | undefined;
+  const cookieToken = req.cookies?.admin_csrf_token as string | undefined;
+
+  if (!headerToken || !cookieToken) {
+    res.status(403).json({ error: "Missing CSRF token" });
+    return;
+  }
+  if (headerToken !== cookieToken) {
+    res.status(403).json({ error: "Invalid CSRF token" });
+    return;
+  }
+  next();
+}
+
+/**
  * Optional admin authentication
  * Does not require admin authentication, but attaches admin user if authenticated
  */

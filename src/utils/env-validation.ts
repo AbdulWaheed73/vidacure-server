@@ -12,6 +12,18 @@ export const validateRequiredEnvVars = () => {
     'SSN_ENCRYPTION_KEY',
   ];
 
+  // Webhook secrets — warn loudly but don't fail startup. Each webhook handler
+  // checks for its own secret at runtime and refuses to process when missing.
+  const webhookSecretWarnings = [
+    'STRIPE_WEBHOOK_SECRET',
+    'CALENDLY_WEBHOOK_SECRET',
+  ];
+  const missingWebhookSecrets = webhookSecretWarnings.filter((v) => !process.env[v]);
+  if (missingWebhookSecrets.length > 0) {
+    console.warn('⚠️  Webhook secrets missing — affected webhooks will reject all requests:');
+    missingWebhookSecrets.forEach((v) => console.warn(`   - ${v}`));
+  }
+
   const missingVars: string[] = [];
 
   requiredEnvVars.forEach((varName) => {

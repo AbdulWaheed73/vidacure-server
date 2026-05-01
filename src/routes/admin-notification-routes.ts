@@ -4,21 +4,23 @@ import {
   resolveNotification,
   getNotificationCount
 } from '../controllers/admin-notification-controller';
-import { requireAdminAuth } from '../middleware/admin-auth-middleware';
+import { requireAdminAuth, requireAdminRole, requireAdminCSRF } from '../middleware/admin-auth-middleware';
 import { auditMiddleware } from '../middleware/audit-middleware';
 
 const router = express.Router();
 
 /**
  * Admin notification endpoints
- * All require admin authentication
+ * All require admin authentication + role.
+ * NOTE: requireAdminCSRF intentionally not wired (see admin-routes.ts comment).
  */
+router.use(requireAdminAuth);
+router.use(requireAdminRole(['admin', 'superadmin']));
 
 // GET /api/admin/notifications
 // Get all notifications (paginated, filterable)
 router.get(
   '/',
-  requireAdminAuth,
   auditMiddleware,
   getNotifications
 );
@@ -27,7 +29,6 @@ router.get(
 // Get notification counts for badge display
 router.get(
   '/count',
-  requireAdminAuth,
   getNotificationCount
 );
 
@@ -35,7 +36,6 @@ router.get(
 // Mark notification as resolved
 router.put(
   '/:notificationId/resolve',
-  requireAdminAuth,
   auditMiddleware,
   resolveNotification
 );

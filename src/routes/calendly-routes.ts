@@ -11,7 +11,7 @@ import {
   markMeetingCompleteByEmail
 } from "../controllers/calendly-controllers";
 import { requireAuth, requireCSRF, requireRole } from "../middleware/auth-middleware";
-import { requireAdminAuth, requireAdminRole } from "../middleware/admin-auth-middleware";
+import { requireAdminAuth, requireAdminRole, requireAdminCSRF } from "../middleware/admin-auth-middleware";
 import { auditMiddleware } from "../middleware/audit-middleware";
 
 const router = Router();
@@ -66,6 +66,7 @@ router.get(
 
 // Admin action to mark meeting as complete
 // Uses admin_token cookie (not app_token) for authentication
+// NOTE: requireAdminCSRF intentionally not wired (see admin-routes.ts comment).
 router.post(
   "/mark-complete/:patientId",
   requireAdminAuth,

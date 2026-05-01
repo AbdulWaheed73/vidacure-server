@@ -132,16 +132,33 @@ export async function generateBackupCodes(): Promise<{
 export async function verifyBackupCode(
   code: string,
   hashedCodes: string[]
-): Promise<{ valid: boolean; remainingCodes: string[] }> {
+): Promise<{ valid: boolean; matchedHash?: string }> {
   for (let i = 0; i < hashedCodes.length; i++) {
     const match = await argon2.verify(hashedCodes[i], code);
     if (match) {
-      const remainingCodes = [...hashedCodes];
-      remainingCodes.splice(i, 1);
-      return { valid: true, remainingCodes };
+      return { valid: true, matchedHash: hashedCodes[i] };
     }
   }
-  return { valid: false, remainingCodes: hashedCodes };
+  return { valid: false };
+}
+
+/**
+ * Atomically remove a single backup-code hash from an admin's backupCodes array.
+ * Returns true if the hash was actually consumed (modifiedCount === 1).
+ *
+ * The previous read-then-splice-then-save pattern was non-atomic: two concurrent
+ * verifications of the same code would both pass before either save committed,
+ * letting one code be spent twice.
+ */
+export async function consumeBackupCodeHash(
+  adminId: string,
+  hash: string
+): Promise<boolean> {
+  const result = await Admin.updateOne(
+    { _id: adminId, backupCodes: hash },
+    { $pull: { backupCodes: hash } }
+  );
+  return result.modifiedCount === 1;
 }
 
 // ─── Pending 2FA Token ──────────────────────────────────────
@@ -158,7 +175,7 @@ export function verifyPendingToken(
   token: string
 ): { userId: string } | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as PendingJWTPayload;
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as PendingJWTPayload;
     if (!decoded.isPending2FA) {
       return null;
     }
@@ -225,7 +242,7 @@ export function createAdminJWT(admin: AdminT): string {
 
 export function verifyAdminJWT(token: string): AdminJWTPayload | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as AdminJWTPayload;
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as AdminJWTPayload;
 
     if (!decoded.isAdmin) {
       console.log("❌ Regular user token used for admin access - BLOCKED");

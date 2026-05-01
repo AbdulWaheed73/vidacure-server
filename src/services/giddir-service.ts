@@ -280,7 +280,10 @@ export async function placeOrder(bundle: FhirBundle): Promise<{
     if (!response.ok) {
       const text = await response.text();
       console.error(`Giddir order failed (${response.status}):`, text);
-      console.error("Request body sent:", JSON.stringify(bundle).substring(0, 2000));
+      // Do NOT log the bundle — it contains plaintext personnummer, name, email,
+      // gender, DOB. Log only structural counts for debugging.
+      const entryCount = Array.isArray(bundle?.entry) ? bundle.entry.length : 0;
+      console.error(`Giddir order request had ${entryCount} bundle entries`);
       return { success: false, error: `Giddir API error: ${response.status} - ${text}` };
     }
 

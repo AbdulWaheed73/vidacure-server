@@ -665,15 +665,34 @@ export const getAllProviders = async (req: AdminAuthenticatedRequest, res: expre
 export const updateProvider = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
     const { providerId } = req.params;
-    const updates = req.body;
+    const body = req.body ?? {};
 
-    // Don't allow changing _id
-    delete updates._id;
+    // Whitelist: only these fields are admin-mutable.
+    // Spreading req.body would let an attacker rewrite eventTypes / calendlyUserUri
+    // and silently redirect bookings to attacker-controlled Calendly accounts.
+    const allowedFields = [
+      'name',
+      'email',
+      'providerType',
+      'specialty',
+      'bio',
+      'isActive',
+      'calendlyUserUri',
+      'eventTypes',
+      'adminNotes',
+    ] as const;
+
+    const updates: Record<string, unknown> = {};
+    for (const key of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(body, key)) {
+        updates[key] = body[key];
+      }
+    }
 
     const provider = await ProviderSchema.findByIdAndUpdate(
       providerId,
       { $set: updates },
-      { new: true }
+      { new: true, runValidators: true }
     );
 
     if (!provider) {

@@ -895,17 +895,18 @@ export const handleCalendlyWebhook = async (
       rawBody = JSON.stringify(req.body);
     }
 
-    // Verify signature (optional in development, required in production)
-    if (signature) {
-      const isValid = verifyCalendlySignature(rawBody, signature, webhookSecret);
-      if (!isValid) {
-        console.error("Invalid Calendly webhook signature");
-        res.status(401).json({ error: "Invalid signature" });
-        return;
-      }
-    } else if (process.env.NODE_ENV === "production") {
-      console.error("Missing Calendly webhook signature in production");
+    // Verify signature — always required (no environment-based bypass).
+    // Test environments should set CALENDLY_WEBHOOK_SECRET to a known value
+    // and replay correctly-signed payloads.
+    if (!signature) {
+      console.error("Missing Calendly webhook signature");
       res.status(401).json({ error: "Missing signature" });
+      return;
+    }
+    const isValid = verifyCalendlySignature(rawBody, signature, webhookSecret);
+    if (!isValid) {
+      console.error("Invalid Calendly webhook signature");
+      res.status(401).json({ error: "Invalid signature" });
       return;
     }
 
@@ -960,6 +961,21 @@ export const handleCalendlyWebhook = async (
             console.error(`❌ Provider not found for webhook: ${providerId} — acking to stop retries`);
             res.status(200).json({ ignored: "provider not found", providerId });
             return;
+          }
+
+          // Soft-warn when invitee email doesn't match patient email so we have
+          // forensic signal if the UTM-trust attack is ever exploited.
+          // We do NOT hard-reject because patients legitimately book with a
+          // personal email that differs from their account email.
+          // Long-term fix: replace utm_term with a server-signed token so the
+          // webhook can verify integrity without trusting the email.
+          const inviteeEmail = (event.payload.email || '').toLowerCase().trim();
+          const expectedEmail = (patient.email || '').toLowerCase().trim();
+          if (inviteeEmail && expectedEmail && inviteeEmail !== expectedEmail) {
+            console.warn(
+              `⚠️  Calendly UTM email mismatch (proceeding): utm patient=${patientId}, ` +
+              `invitee=${inviteeEmail}, expected=${expectedEmail}`
+            );
           }
 
           // Initialize providerMeetings array if needed

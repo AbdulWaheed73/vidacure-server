@@ -606,15 +606,20 @@ export const getPatientLabOrders = async (req: AuthenticatedRequest, res: Respon
 
 export const handleGiddirWebhook = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    // Verify x-api-key header (Giddir sends this with webhook requests)
+    // Verify x-api-key header — fail closed if env is unset.
+    // Previously the check was wrapped in `if (webhookApiKey)`, which made the
+    // webhook fully public when the env var was missing.
     const webhookApiKey = process.env.GIDDIR_WEBHOOK_API_KEY;
-    if (webhookApiKey) {
-      const receivedKey = req.headers["x-api-key"] as string;
-      if (receivedKey !== webhookApiKey) {
-        console.warn("Giddir webhook: invalid x-api-key");
-        res.status(401).json({ error: "Invalid API key" });
-        return;
-      }
+    if (!webhookApiKey) {
+      console.error("Giddir webhook: GIDDIR_WEBHOOK_API_KEY is not configured");
+      res.status(503).json({ error: "Webhook not configured" });
+      return;
+    }
+    const receivedKey = req.headers["x-api-key"] as string;
+    if (receivedKey !== webhookApiKey) {
+      console.warn("Giddir webhook: invalid x-api-key");
+      res.status(401).json({ error: "Invalid API key" });
+      return;
     }
 
     // Parse raw body if it's a Buffer (from express.raw middleware)
@@ -622,8 +627,6 @@ export const handleGiddirWebhook = async (req: AuthenticatedRequest, res: Respon
     if (Buffer.isBuffer(body)) {
       body = JSON.parse(body.toString("utf-8"));
     }
-
-    console.log("Giddir webhook received:", JSON.stringify(body).substring(0, 500));
 
     const parsed = parseWebhookPayload(body);
 

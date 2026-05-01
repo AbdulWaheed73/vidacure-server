@@ -332,7 +332,7 @@ export function createAppJWT(user: PatientT | DoctorT | BaseUser): string {
 
 export function verifyAppJWT(token: string): AppUserClaims | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as AppUserClaims;
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as AppUserClaims;
     return decoded;
   } catch {
     return null;

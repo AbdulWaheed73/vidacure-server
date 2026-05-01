@@ -119,13 +119,15 @@ export const updatePrescriptionRequestStatus = async (req: AuthenticatedRequest,
       return;
     }
 
-    // Find patient by prescription request ID
+    // Find patient by prescription request ID, scoped to the requesting doctor
+    // (prevents doctors from acting on other doctors' patients' requests)
     const patient = await PatientSchema.findOne({
-      "prescriptionRequests._id": requestId
+      "prescriptionRequests._id": requestId,
+      doctor: userId,
     });
 
     if (!patient) {
-      await auditDatabaseError(req, "update_prescription_request_status", "READ", new Error("Prescription request not found"), userId);
+      await auditDatabaseError(req, "update_prescription_request_status", "READ", new Error("Prescription request not found or not assigned to this doctor"), userId);
       res.status(404).json({ error: "Prescription request not found" });
       return;
     }

@@ -61,9 +61,13 @@ export function requireConsent(
       next();
     })
     .catch((error) => {
-      // If consent check fails, don't block — fail open for availability
+      // Fail closed: PDL/GDPR require we cannot serve protected data
+      // when consent state is unknown.
       console.error('Consent check failed:', error);
-      next();
+      res.status(503).json({
+        error: 'Consent verification unavailable',
+        message: 'Please retry shortly.',
+      });
     });
 }
 
@@ -97,7 +101,10 @@ export function requireSpecificConsent(consentType: ConsentType) {
       })
       .catch((error) => {
         console.error(`Consent check failed for ${consentType}:`, error);
-        next();
+        res.status(503).json({
+          error: 'Consent verification unavailable',
+          message: 'Please retry shortly.',
+        });
       });
   };
 }

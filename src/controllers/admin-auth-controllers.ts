@@ -3,6 +3,7 @@ import Admin from "../schemas/admin-schema";
 import { logAuditEvent } from "../services/audit-service";
 import {
   verifyPassword,
+  hashPassword,
   checkAccountLockout,
   recordFailedAttempt,
   resetFailedAttempts,
@@ -14,9 +15,20 @@ import {
   encryptTotpSecret,
   generateBackupCodes,
   verifyBackupCode,
+  consumeBackupCodeHash,
   createAdminJWT,
   generateAdminCSRFToken,
 } from "../services/admin-auth-service";
+
+// Dummy argon2id hash used to equalize timing on the unknown-email path.
+// Computed lazily on first use so we don't pay the cost at import time.
+let dummyArgon2HashPromise: Promise<string> | null = null;
+function getDummyHash(): Promise<string> {
+  if (!dummyArgon2HashPromise) {
+    dummyArgon2HashPromise = hashPassword("dummy-password-do-not-use");
+  }
+  return dummyArgon2HashPromise;
+}
 
 /**
  * POST /api/admin/auth/login
@@ -34,12 +46,24 @@ export const adminLogin = async (
       return;
     }
 
+    // Reject non-string inputs early (defense against operator injection like
+    // `email: { $ne: null }` matching the first admin).
+    if (typeof email !== "string" || typeof password !== "string") {
+      res.status(400).json({ error: "Email and password must be strings" });
+      return;
+    }
+
     // Find admin by email (case-insensitive)
     const admin = await Admin.findOne({
       email: { $regex: new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
     });
 
     if (!admin) {
+      // Run a dummy argon2 verification against a synthetic hash so the response
+      // time matches the password-check path. Without this, attackers can
+      // distinguish valid-vs-invalid emails by timing (~300ms argon2 cost).
+      const dummy = await getDummyHash();
+      await verifyPassword(dummy, password).catch(() => false);
       res.status(401).json({ error: "Invalid email or password" });
       return;
     }
@@ -130,11 +154,10 @@ export const verifyAdmin2FA = async (
         return;
       }
       const result = await verifyBackupCode(code, admin.backupCodes);
-      valid = result.valid;
-      if (valid) {
-        // Remove used backup code
-        admin.backupCodes = result.remainingCodes;
-        await admin.save();
+      if (result.valid && result.matchedHash) {
+        // Atomically consume the matched hash. If two concurrent requests both
+        // verified the same code, only one $pull will succeed.
+        valid = await consumeBackupCodeHash(admin._id!.toString(), result.matchedHash);
       }
     } else {
       // Verify TOTP code
@@ -146,6 +169,9 @@ export const verifyAdmin2FA = async (
     }
 
     if (!valid) {
+      // Count failed 2FA attempts so an attacker who has the password can't
+      // brute-force unlimited 6-digit TOTP codes within the 5-min pending token.
+      await recordFailedAttempt(admin._id!.toString());
       await logAuditEvent({
         userId: admin._id!.toString(), role: 'admin', action: 'admin_2fa_failed',
         operation: 'READ', success: false, ipAddress: req.ip || 'unknown',
