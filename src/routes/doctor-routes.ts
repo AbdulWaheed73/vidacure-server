@@ -12,7 +12,12 @@ import {
 } from "../controllers/doctor-controllers";
 import { updatePrescriptionRequestStatus } from "../controllers/prescription-controllers";
 import { getPatientLabOrders } from "../controllers/lab-test-controllers";
-import { getTreatmentJournal, upsertTreatmentJournal } from "../controllers/treatment-journal-controllers";
+import {
+  getTreatmentJournal,
+  upsertTreatmentJournal,
+  getUnassignedPatientTreatmentJournal,
+  upsertUnassignedPatientTreatmentJournal,
+} from "../controllers/treatment-journal-controllers";
 
 const router = Router();
 
@@ -40,6 +45,10 @@ router.get("/patient/:patientId/lab-orders", getPatientLabOrders);
 // Treatment journal routes
 router.get("/treatment-journal", getTreatmentJournal);
 router.put("/treatment-journal", upsertTreatmentJournal);
+
+// Treatment journal for unassigned (unsubscribed) patients
+router.get("/unassigned-patient-treatment-journal/:patientId", getUnassignedPatientTreatmentJournal);
+router.put("/unassigned-patient-treatment-journal/:patientId", upsertUnassignedPatientTreatmentJournal);
 
 // Alternative routes for consistency with frontend routing
 router.get("/", getDoctorDashboard); // Default dashboard route
