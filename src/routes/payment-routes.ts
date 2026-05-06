@@ -101,9 +101,16 @@ router.post("/webhook", express.raw({ type: 'application/json' }), async (req: e
 
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as Stripe.Invoice;
-        if ((invoice as any).subscription) {
-          const subscription = await stripeService.retrieveSubscription((invoice as any).subscription as string);
+        const subRef =
+          (invoice.parent?.type === 'subscription_details'
+            ? invoice.parent.subscription_details?.subscription
+            : null) ?? invoice.lines.data[0]?.subscription ?? null;
+        const subscriptionId = typeof subRef === 'string' ? subRef : subRef?.id;
+        if (subscriptionId) {
+          const subscription = await stripeService.retrieveSubscription(subscriptionId);
           await handleSubscriptionUpdate(subscription);
+        } else {
+          console.warn('invoice.payment_succeeded had no subscription id, invoice:', invoice.id);
         }
         break;
       }
@@ -111,9 +118,16 @@ router.post("/webhook", express.raw({ type: 'application/json' }), async (req: e
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
         console.log('Payment failed for invoice:', invoice.id);
-        if ((invoice as any).subscription) {
-          const subscription = await stripeService.retrieveSubscription((invoice as any).subscription as string);
+        const subRef =
+          (invoice.parent?.type === 'subscription_details'
+            ? invoice.parent.subscription_details?.subscription
+            : null) ?? invoice.lines.data[0]?.subscription ?? null;
+        const subscriptionId = typeof subRef === 'string' ? subRef : subRef?.id;
+        if (subscriptionId) {
+          const subscription = await stripeService.retrieveSubscription(subscriptionId);
           await handleSubscriptionUpdate(subscription);
+        } else {
+          console.warn('invoice.payment_failed had no subscription id, invoice:', invoice.id);
         }
         break;
       }
