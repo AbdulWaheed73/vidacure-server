@@ -793,7 +793,6 @@ export const handleSuccessfulPayment = async (
 ) => {
   try {
     console.log("Processing successful payment for session:", session.id);
-    console.log("🔬 handleSuccessfulPayment — session.id:", session.id, "session.status:", session.status, "session.subscription:", session.subscription);
 
     const userId = session.metadata?.userId;
     if (!userId) {
@@ -891,29 +890,19 @@ export const handleSuccessfulPayment = async (
 export const handleFailedPayment = async (session: Stripe.Checkout.Session) => {
   try {
     console.log("Processing failed payment for session:", session.id);
-    console.log("🔬 handleFailedPayment — session.subscription =", session.subscription);
-    console.log("🔬 handleFailedPayment — session.metadata =", session.metadata);
 
     const userId = session.metadata?.userId;
-    if (!userId) {
-      console.log("🔬 returning early — no userId in metadata");
-      return;
-    }
+    if (!userId) return;
 
     const expiredSubId = typeof session.subscription === "string"
       ? session.subscription
       : session.subscription?.id;
-    console.log("🔬 expiredSubId =", expiredSubId);
-    if (!expiredSubId) {
-      console.log("🔬 returning early — no expiredSubId, NO DB WRITE");
-      return;
-    }
+    if (!expiredSubId) return;
 
-    const result = await PatientSchema.updateOne(
+    await PatientSchema.updateOne(
       { _id: userId, "subscription.stripeSubscriptionId": expiredSubId },
       { $set: { "subscription.status": "unpaid" } }
     );
-    console.log("🔬 updateOne result — matched:", result.matchedCount, "modified:", result.modifiedCount);
   } catch (error) {
     logCriticalWebhookError("handleFailedPayment", error, {
       sessionId: session?.id,
@@ -927,7 +916,6 @@ export const handleSubscriptionUpdate = async (
 ) => {
   try {
     console.log("Processing subscription update:", subscription.id);
-    console.log("🔬 handleSubscriptionUpdate — incoming status:", subscription.status, "for sub:", subscription.id);
 
     const patient = await PatientSchema.findOne({
       "subscription.stripeSubscriptionId": subscription.id,
@@ -936,7 +924,6 @@ export const handleSubscriptionUpdate = async (
       console.error("Patient not found for subscription:", subscription.id);
       return;
     }
-    console.log("🔬 handleSubscriptionUpdate — found patient:", patient._id, "current DB status:", patient.subscription?.status);
 
     const { start: updateStartTimestamp, end: updateEndTimestamp } = getSubscriptionPeriod(subscription);
 
