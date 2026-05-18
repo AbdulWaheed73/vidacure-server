@@ -21,6 +21,7 @@ import consentRoutes from "./routes/consent-routes";
 import adminNotificationRoutes from "./routes/admin-notification-routes";
 import pendingBookingRoutes from "./routes/pending-booking-routes";
 import providerRoutes from "./routes/provider-routes";
+import suggestionRoutes from "./routes/suggestion-routes";
 import { requireAuth, requireCSRF, requireRole, requireActiveSubscription } from "./middleware/auth-middleware";
 // import { globalApiRateLimiter } from "./middleware/rate-limit-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
@@ -145,6 +146,10 @@ app.use("/api/patient", requireAuth, auditMiddleware, requireCSRF, requireRole('
 app.use("/api/providers", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), requireConsent, providerRoutes);
 app.use("/api/doctor", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), doctorRoutes);
 app.use("/api/prescription", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), requireActiveSubscription, requireConsent, prescriptionRoutes);
+
+// Platform improvement suggestions — same submit handler for patient and doctor
+app.use("/api/patient/suggestions", requireAuth, auditMiddleware, requireCSRF, requireRole('patient'), requireConsent, suggestionRoutes);
+app.use("/api/doctor/suggestions", requireAuth, auditMiddleware, requireCSRF, requireRole('doctor'), suggestionRoutes);
 
 // Lab test routes - webhook is public (verified by secret), other routes require patient auth
 app.use("/api/lab-tests", labTestRoutes);

@@ -25,6 +25,10 @@ import {
   deactivatePromotion,
   getSubscriptionProducts,
 } from "../controllers/admin-controllers";
+import {
+  listSuggestions,
+  deleteSuggestion,
+} from "../controllers/suggestion-controllers";
 
 const router = express.Router();
 
@@ -82,6 +86,10 @@ router.post("/calendly-lookup", calendlyLookup);
 // Audit log review (PDL compliance - systematic log reviews)
 router.get("/audit-logs", getAuditLogs);
 router.get("/audit-logs/anomalies", getAuditAnomalies);
+
+// Platform improvement suggestions — superadmin-only
+router.get("/suggestions", requireAdminRole(['admin']), listSuggestions);
+router.delete("/suggestions/:id", requireAdminRole(['admin']), deleteSuggestion);
 
 // Legacy route - kept for backwards compatibility
 router.get("/users", (req, res) => {
