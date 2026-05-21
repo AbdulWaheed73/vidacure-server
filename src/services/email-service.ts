@@ -665,8 +665,8 @@ export const sendHypnotherapistNotification = async (
 
 type PaymentFailedEmailParams = {
   to: string;
-  amount: string;
-  currency: string;
+  amount?: string | null;
+  currency?: string | null;
   hostedInvoiceUrl?: string | null;
 };
 
@@ -680,6 +680,13 @@ export const sendPaymentFailedEmail = async (
   const updateUrl =
     hostedInvoiceUrl ||
     `${process.env.FRONTEND_URL || "https://www.vidacure.se"}/account/billing`;
+
+  // When the exact amount can't be determined reliably, omit the figure
+  // rather than risk showing a misleading number (e.g. ignoring a coupon).
+  const amountText =
+    amount && currency
+      ? `betalningen om <strong>${amount} ${currency}</strong>`
+      : `din senaste betalning`;
 
   const html = `
 <!DOCTYPE html>
@@ -706,7 +713,7 @@ export const sendPaymentFailedEmail = async (
             <td style="padding:8px 32px 20px;">
               <h2 style="margin:0 0 12px;font-size:20px;color:#92400e;">Betalningen misslyckades</h2>
               <p style="margin:0;font-size:14px;color:#444;line-height:1.6;">
-                Vi vill informera om att betalningen om <strong>${amount} ${currency}</strong> inte kunde genomföras, sannolikt på grund av otillräckliga medel på kontot.
+                Vi vill informera om att ${amountText} inte kunde genomföras, sannolikt på grund av otillräckliga medel på kontot.
               </p>
             </td>
           </tr>

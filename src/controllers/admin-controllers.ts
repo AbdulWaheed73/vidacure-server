@@ -199,38 +199,51 @@ export const sendPaymentFailedEmailManual = async (req: AdminAuthenticatedReques
       return res.status(400).json({ error: 'Invalid email address' });
     }
 
-    let amount = '0.00';
-    let currency = 'SEK';
+    // Amount is intentionally nullable. We only fill it when we can read a
+    // figure that already reflects the customer's coupons/discounts. If we
+    // can't, we leave it null and the email omits the number entirely rather
+    // than showing the misleading list price.
+    let amount: string | null = null;
+    let currency: string | null = null;
     let hostedInvoiceUrl: string | null = null;
 
-    const subscriptionId = patient.subscription?.stripeSubscriptionId;
     const customerId = patient.subscription?.stripeCustomerId;
 
-    if (subscriptionId) {
-      try {
-        const sub = await stripeService.retrieveSubscription(subscriptionId);
-        const item = sub.items?.data?.[0];
-        const unitAmount = item?.price?.unit_amount ?? 0;
-        amount = (unitAmount / 100).toFixed(2);
-        currency = (item?.price?.currency || 'sek').toUpperCase();
-      } catch (err) {
-        console.warn('Could not fetch subscription for manual payment failed email:', err);
-      }
-    }
-
     if (customerId) {
+      // 1. Prefer the actual open/failed invoice — amount_due reflects discounts.
       try {
         const invoices = await stripeService.getCustomerInvoices(customerId);
         const latestOpenOrFailed = invoices.find(
           (inv) => inv.status === 'open' || inv.status === 'uncollectible'
         );
-        if (latestOpenOrFailed?.hosted_invoice_url) {
-          hostedInvoiceUrl = latestOpenOrFailed.hosted_invoice_url;
+        if (latestOpenOrFailed) {
+          amount = ((latestOpenOrFailed.amount_due ?? 0) / 100).toFixed(2);
+          currency = (latestOpenOrFailed.currency || 'sek').toUpperCase();
+          if (latestOpenOrFailed.hosted_invoice_url) {
+            hostedInvoiceUrl = latestOpenOrFailed.hosted_invoice_url;
+          }
         }
       } catch (err) {
         console.warn('Could not fetch invoices for manual payment failed email:', err);
       }
+
+      // 2. No failed invoice on record — fall back to the upcoming invoice
+      //    preview, which also honors the coupon (createPreview applies discounts).
+      if (amount === null) {
+        try {
+          const upcoming = await stripeService.getUpcomingInvoice(customerId);
+          if (upcoming) {
+            amount = ((upcoming.amount_due ?? upcoming.total ?? 0) / 100).toFixed(2);
+            currency = (upcoming.currency || 'sek').toUpperCase();
+          }
+        } catch (err) {
+          console.warn('Could not fetch upcoming invoice for manual payment failed email:', err);
+        }
+      }
     }
+
+    // 3. Nothing reliable resolved (e.g. canceled sub, no Stripe customer) —
+    //    send without an amount; the email falls back to generic wording.
 
     await sendPaymentFailedEmail({
       to: recipient,
