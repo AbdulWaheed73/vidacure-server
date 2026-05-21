@@ -24,6 +24,7 @@ import {
   listPromotions,
   deactivatePromotion,
   getSubscriptionProducts,
+  sendPaymentFailedEmailManual,
 } from "../controllers/admin-controllers";
 import {
   listSuggestions,
@@ -45,6 +46,9 @@ router.get("/patients", getAllPatients);
 
 // Get detailed subscription information for a specific patient
 router.get("/patients/:patientId/subscription-details", getPatientSubscriptionDetails);
+
+// Manually send the "payment failed" email to a patient
+router.post("/patients/:patientId/send-payment-failed-email", sendPaymentFailedEmailManual);
 
 // Get unassigned patients
 router.get("/unassigned-patients", getUnassignedPatients);

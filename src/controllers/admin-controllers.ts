@@ -11,6 +11,7 @@ import { AdminAuthenticatedRequest } from "../middleware/admin-auth-middleware";
 import { auditAdminAction } from "../middleware/audit-middleware";
 import { notifyChatReassignDoctor } from "../services/chat-client-service";
 import { LAB_TEST_PACKAGES } from "../config/lab-test-packages";
+import { sendPaymentFailedEmail } from "../services/email-service";
 
 /**
  * Get dashboard statistics
@@ -18,12 +19,15 @@ import { LAB_TEST_PACKAGES } from "../config/lab-test-packages";
  */
 export const getDashboardStats = async (req: AdminAuthenticatedRequest, res: express.Response) => {
   try {
-    const [totalPatients, totalDoctors, unassignedPatients, activeSubscriptions, totalProviders] = await Promise.all([
+    const [totalPatients, totalDoctors, unassignedPatients, activeSubscriptions, pastDueSubscriptions, totalProviders] = await Promise.all([
       PatientSchema.countDocuments({}),
       DoctorSchema.countDocuments({}),
       PatientSchema.countDocuments({ doctor: { $exists: false } }),
       PatientSchema.countDocuments({
         'subscription.status': 'active'
+      }),
+      PatientSchema.countDocuments({
+        'subscription.status': 'past_due'
       }),
       ProviderSchema.countDocuments({ isActive: true })
     ]);
@@ -35,6 +39,7 @@ export const getDashboardStats = async (req: AdminAuthenticatedRequest, res: exp
       totalDoctors,
       unassignedPatients,
       activeSubscriptions,
+      pastDueSubscriptions,
       totalProviders
     });
   } catch (error: any) {
@@ -53,15 +58,24 @@ export const getAllPatients = async (req: AdminAuthenticatedRequest, res: expres
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
     const includeStripeData = req.query.includeStripeData === 'true';
+    const statusFilter = typeof req.query.status === 'string' ? req.query.status : undefined;
+
+    const validStatuses = ['active', 'trialing', 'past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired'];
+    const query: Record<string, any> = {};
+    if (statusFilter && validStatuses.includes(statusFilter)) {
+      query['subscription.status'] = statusFilter;
+    } else if (statusFilter === 'none') {
+      query['subscription.status'] = { $in: [null, undefined] };
+    }
 
     const [patients, totalCount] = await Promise.all([
-      PatientSchema.find({})
+      PatientSchema.find(query)
         .populate('doctor', 'name email _id')
         .select('name email doctor subscription lastLogin createdAt calendly')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
-      PatientSchema.countDocuments({})
+      PatientSchema.countDocuments(query)
     ]);
 
     // If includeStripeData is true, fetch real-time data from Stripe for each patient
@@ -149,6 +163,87 @@ export const getAllDoctors = async (req: AdminAuthenticatedRequest, res: express
     });
   } catch (error: any) {
     await auditAdminAction(req, 'admin_get_all_doctors', 'READ', false, undefined, undefined, error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Manually send the "payment failed" email to a patient.
+ * POST /api/admin/patients/:patientId/send-payment-failed-email
+ */
+export const sendPaymentFailedEmailManual = async (req: AdminAuthenticatedRequest, res: express.Response) => {
+  try {
+    const { patientId } = req.params;
+
+    const patient = await PatientSchema.findById(patientId)
+      .select('email subscription')
+      .lean();
+
+    if (!patient) {
+      await auditAdminAction(req, 'admin_send_payment_failed_email', 'UPDATE', false, patientId, { reason: 'patient_not_found' });
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    // Admin may override the recipient; otherwise fall back to the patient's email on file.
+    const overrideEmail = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+    const recipient = overrideEmail || patient.email;
+
+    if (!recipient) {
+      await auditAdminAction(req, 'admin_send_payment_failed_email', 'UPDATE', false, patientId, { reason: 'no_email' });
+      return res.status(400).json({ error: 'No recipient email provided and patient has none on file' });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(recipient)) {
+      await auditAdminAction(req, 'admin_send_payment_failed_email', 'UPDATE', false, patientId, { reason: 'invalid_email' });
+      return res.status(400).json({ error: 'Invalid email address' });
+    }
+
+    let amount = '0.00';
+    let currency = 'SEK';
+    let hostedInvoiceUrl: string | null = null;
+
+    const subscriptionId = patient.subscription?.stripeSubscriptionId;
+    const customerId = patient.subscription?.stripeCustomerId;
+
+    if (subscriptionId) {
+      try {
+        const sub = await stripeService.retrieveSubscription(subscriptionId);
+        const item = sub.items?.data?.[0];
+        const unitAmount = item?.price?.unit_amount ?? 0;
+        amount = (unitAmount / 100).toFixed(2);
+        currency = (item?.price?.currency || 'sek').toUpperCase();
+      } catch (err) {
+        console.warn('Could not fetch subscription for manual payment failed email:', err);
+      }
+    }
+
+    if (customerId) {
+      try {
+        const invoices = await stripeService.getCustomerInvoices(customerId);
+        const latestOpenOrFailed = invoices.find(
+          (inv) => inv.status === 'open' || inv.status === 'uncollectible'
+        );
+        if (latestOpenOrFailed?.hosted_invoice_url) {
+          hostedInvoiceUrl = latestOpenOrFailed.hosted_invoice_url;
+        }
+      } catch (err) {
+        console.warn('Could not fetch invoices for manual payment failed email:', err);
+      }
+    }
+
+    await sendPaymentFailedEmail({
+      to: recipient,
+      amount,
+      currency,
+      hostedInvoiceUrl,
+    });
+
+    await auditAdminAction(req, 'admin_send_payment_failed_email', 'UPDATE', true, patientId, { email: recipient, overridden: !!overrideEmail });
+
+    res.json({ success: true, message: 'Payment failed email sent', sentTo: recipient });
+  } catch (error: any) {
+    await auditAdminAction(req, 'admin_send_payment_failed_email', 'UPDATE', false, req.params.patientId, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };

@@ -23,6 +23,8 @@ import {
   handleHypnotherapistPaymentCompleted,
 } from "../controllers/payment-controllers";
 import { submitCancellationFeedback } from "../controllers/cancellation-feedback-controller";
+import PatientSchema from "../schemas/patient-schema";
+import { sendPaymentFailedEmail } from "../services/email-service";
 import { requireAuth, requireCSRF, requireRole } from "../middleware/auth-middleware";
 import { auditMiddleware } from "../middleware/audit-middleware";
 import { paymentRateLimiter } from "../middleware/rate-limit-middleware";
@@ -126,6 +128,26 @@ router.post("/webhook", express.raw({ type: 'application/json' }), async (req: e
         if (subscriptionId) {
           const subscription = await stripeService.retrieveSubscription(subscriptionId);
           await handleSubscriptionUpdate(subscription);
+
+          try {
+            const patient = await PatientSchema.findOne({
+              "subscription.stripeSubscriptionId": subscriptionId,
+            }).select("email").lean();
+
+            if (patient?.email) {
+              const amountDue = ((invoice.amount_due ?? 0) / 100).toFixed(2);
+              await sendPaymentFailedEmail({
+                to: patient.email,
+                amount: amountDue,
+                currency: (invoice.currency || "sek").toUpperCase(),
+                hostedInvoiceUrl: invoice.hosted_invoice_url,
+              });
+            } else {
+              console.warn('Payment failed but patient/email not found for subscription:', subscriptionId);
+            }
+          } catch (emailErr) {
+            console.error('Failed to send payment-failed email:', emailErr);
+          }
         } else {
           console.warn('invoice.payment_failed had no subscription id, invoice:', invoice.id);
         }
