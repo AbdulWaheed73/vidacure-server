@@ -23,6 +23,12 @@ export enum PrescriptionRequestStatus {
   UNDER_REVIEW = "under_review"
 }
 
+// A patient's prescription request enriched with that patient's identity,
+// as returned to doctors.
+export type DoctorPrescriptionRequestItem = PrescriptionRequestT & {
+  patient: { id: Types.ObjectId; name: string };
+};
+
 // Main Prescription Types
 export type PrescriptionT = {
   doctor?: Types.ObjectId;

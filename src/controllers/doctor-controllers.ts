@@ -5,6 +5,7 @@ import DoctorSchema from "../schemas/doctor-schema";
 import PatientSchema from "../schemas/patient-schema";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
 import { decryptSSN } from "../services/auth-service";
+import { PrescriptionRequestStatus, PrescriptionRequestT, DoctorPrescriptionRequestItem } from "../types/prescription-types";
 
 // Get doctor dashboard data
 export async function getDoctorDashboard(
@@ -154,49 +155,67 @@ export async function getDoctorPrescriptions(
       patientsCount: doctor.patients?.length || 0
     });
 
-    // Collect all prescription requests from assigned patients
-    const allPrescriptionRequests: any[] = [];
+    // The populated patients carry Mongoose subdocuments; narrow them to the
+    // shape we actually read here.
+    type PopulatedPatient = {
+      _id: Types.ObjectId;
+      name: string;
+      prescriptionRequests?: Array<{ toObject(): PrescriptionRequestT }>;
+    };
 
-    if (doctor.patients && doctor.patients.length > 0) {
-      for (const patient of doctor.patients) {
-        if ((patient as any).prescriptionRequests && (patient as any).prescriptionRequests.length > 0) {
-          const patientRequests = (patient as any).prescriptionRequests.map((request: any) => ({
-            ...request.toObject(),
-            patient: {
-              id: (patient as any)._id,
-              name: (patient as any).name
-            }
-          }));
-          allPrescriptionRequests.push(...patientRequests);
-        }
+    // Collect all prescription requests from assigned patients
+    const allPrescriptionRequests: DoctorPrescriptionRequestItem[] = [];
+
+    const patients = (doctor.patients ?? []) as unknown as PopulatedPatient[];
+    for (const patient of patients) {
+      for (const request of patient.prescriptionRequests ?? []) {
+        allPrescriptionRequests.push({
+          ...request.toObject(),
+          patient: {
+            id: patient._id,
+            name: patient.name,
+          },
+        });
       }
     }
 
-    // Sort by creation date (newest first)
-    allPrescriptionRequests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const sortNewestFirst = (a: DoctorPrescriptionRequestItem, b: DoctorPrescriptionRequestItem) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 
-    // Pagination
+    // Requests the doctor still has to act on (pending / under review) are ALWAYS
+    // returned in full — a pending request must never be hidden behind pagination.
+    const isActionable = (r: DoctorPrescriptionRequestItem) =>
+      r.status === PrescriptionRequestStatus.PENDING ||
+      r.status === PrescriptionRequestStatus.UNDER_REVIEW;
+
+    const pendingRequests = allPrescriptionRequests
+      .filter(isActionable)
+      .sort(sortNewestFirst);
+
+    // Already-actioned history is paginated and loaded on demand ("Load more").
+    const historyRequests = allPrescriptionRequests
+      .filter((r) => !isActionable(r))
+      .sort(sortNewestFirst);
+
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 0));
-    const totalCount = allPrescriptionRequests.length;
-
-    const paginatedRequests = limit > 0
-      ? allPrescriptionRequests.slice((page - 1) * limit, page * limit)
-      : allPrescriptionRequests;
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 10));
+    const historyStart = (page - 1) * limit;
+    const historyPage = historyRequests.slice(historyStart, historyStart + limit);
+    const hasMore = historyStart + historyPage.length < historyRequests.length;
 
     res.json({
       success: true,
       data: {
-        prescriptionRequests: paginatedRequests,
-        totalCount,
-        pendingCount: allPrescriptionRequests.filter(req => req.status === 'pending').length,
-        approvedCount: allPrescriptionRequests.filter(req => req.status === 'approved').length,
-        deniedCount: allPrescriptionRequests.filter(req => req.status === 'denied').length,
-        underReviewCount: allPrescriptionRequests.filter(req => req.status === 'under_review').length,
+        pendingRequests,
+        historyRequests: historyPage,
+        totalCount: allPrescriptionRequests.length,
+        pendingCount: allPrescriptionRequests.filter(r => r.status === PrescriptionRequestStatus.PENDING).length,
+        approvedCount: allPrescriptionRequests.filter(r => r.status === PrescriptionRequestStatus.APPROVED).length,
+        deniedCount: allPrescriptionRequests.filter(r => r.status === PrescriptionRequestStatus.DENIED).length,
+        underReviewCount: allPrescriptionRequests.filter(r => r.status === PrescriptionRequestStatus.UNDER_REVIEW).length,
         page,
-        limit: limit || totalCount,
-        totalPages: limit > 0 ? Math.ceil(totalCount / limit) : 1,
-        hasMore: limit > 0 ? page * limit < totalCount : false
+        hasMore,
+        nextPage: hasMore ? page + 1 : null,
       }
     });
   } catch (error) {
