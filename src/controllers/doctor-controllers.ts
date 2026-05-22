@@ -167,17 +167,23 @@ export async function getDoctorPrescriptions(
     const allPrescriptionRequests: DoctorPrescriptionRequestItem[] = [];
 
     const patients = (doctor.patients ?? []) as unknown as PopulatedPatient[];
+    console.log(`[getDoctorPrescriptions] doctorId=${doctorId} patientsCount=${patients.length} query=${JSON.stringify(req.query)}`);
     for (const patient of patients) {
-      for (const request of patient.prescriptionRequests ?? []) {
+      const reqs = patient.prescriptionRequests ?? [];
+      console.log(`[getDoctorPrescriptions]  patient="${patient.name}" requests=${reqs.length}`);
+      for (const request of reqs) {
+        const obj = request.toObject();
         allPrescriptionRequests.push({
-          ...request.toObject(),
+          ...obj,
           patient: {
             id: patient._id,
             name: patient.name,
           },
         });
+        console.log(`[getDoctorPrescriptions]    -> status=${JSON.stringify(obj.status)} (type ${typeof obj.status}) createdAt=${obj.createdAt}`);
       }
     }
+    console.log(`[getDoctorPrescriptions] collected total=${allPrescriptionRequests.length} statuses=${JSON.stringify(allPrescriptionRequests.map(r => r.status))}`);
 
     const sortNewestFirst = (a: DoctorPrescriptionRequestItem, b: DoctorPrescriptionRequestItem) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
@@ -197,11 +203,15 @@ export async function getDoctorPrescriptions(
       .filter((r) => !isActionable(r))
       .sort(sortNewestFirst);
 
+    console.log(`[getDoctorPrescriptions] split pending=${pendingRequests.length} history=${historyRequests.length} (enum PENDING="${PrescriptionRequestStatus.PENDING}", UNDER_REVIEW="${PrescriptionRequestStatus.UNDER_REVIEW}")`);
+
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 10));
     const historyStart = (page - 1) * limit;
     const historyPage = historyRequests.slice(historyStart, historyStart + limit);
     const hasMore = historyStart + historyPage.length < historyRequests.length;
+
+    console.log(`[getDoctorPrescriptions] RESPONSE pendingRequests=${pendingRequests.length} historyPage=${historyPage.length} totalCount=${allPrescriptionRequests.length} pendingCount=${allPrescriptionRequests.filter(r => r.status === PrescriptionRequestStatus.PENDING).length} hasMore=${hasMore} keys=${JSON.stringify(["pendingRequests","historyRequests"])}`);
 
     res.json({
       success: true,
