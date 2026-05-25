@@ -203,7 +203,7 @@ export const updateQuestionnaire = async (req: AuthenticatedRequest, res: Respon
 // Add weight history entry
 export const addWeightHistory = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { weight, sideEffects, notes } = req.body;
+    const { weight, sideEffects, notes, date } = req.body;
     const userId = req.user?.userId;
 
     if (!userId) {
@@ -216,8 +216,33 @@ export const addWeightHistory = async (req: AuthenticatedRequest, res: Response)
       return;
     }
 
+    // Determine the entry date: client-supplied (yyyy-mm-dd) or today (UTC)
+    const todayString = new Date().toISOString().split('T')[0];
+    let dateString = todayString;
+    if (date !== undefined && date !== null && date !== '') {
+      if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        res.status(400).json({ error: "Date must be a string in yyyy-mm-dd format" });
+        return;
+      }
+      const parsed = new Date(date + 'T00:00:00.000Z');
+      if (isNaN(parsed.getTime())) {
+        res.status(400).json({ error: "Invalid date" });
+        return;
+      }
+      // Allow up to UTC-today + 1 day so clients in eastern timezones whose
+      // local "today" is already tomorrow in UTC aren't rejected.
+      const maxDate = new Date(Date.now() + 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split('T')[0];
+      if (date > maxDate) {
+        res.status(400).json({ error: "Date cannot be in the future" });
+        return;
+      }
+      dateString = date;
+    }
+
     const patient = await PatientSchema.findById(userId);
-    
+
     if (!patient) {
       await auditDatabaseError(req, "add_weight_history", "READ", new Error("Patient not found"), userId);
       res.status(404).json({ error: "Patient not found" });
@@ -226,10 +251,8 @@ export const addWeightHistory = async (req: AuthenticatedRequest, res: Response)
 
     await auditDatabaseOperation(req, "add_weight_history_find_patient", "READ", userId);
 
-    // Create date string in yyyy-mm-dd format (current date)
-    const today = new Date();
-    const dateString = today.toISOString().split('T')[0]; // yyyy-mm-dd
-    const entryDate = new Date(dateString + 'T00:00:00.000Z'); // Set to midnight UTC
+    const entryDate = new Date(dateString + 'T00:00:00.000Z');
+    const isBackdated = dateString !== todayString;
 
     // Check if entry for today already exists
     const existingEntryIndex = patient.weightHistory.findIndex(entry => {
@@ -247,20 +270,22 @@ export const addWeightHistory = async (req: AuthenticatedRequest, res: Response)
     if (existingEntryIndex >= 0) {
       // Override existing entry for the same date
       patient.weightHistory[existingEntryIndex] = newEntry;
-      await auditDatabaseOperation(req, "add_weight_history_update_existing", "UPDATE", userId, { 
+      await auditDatabaseOperation(req, "add_weight_history_update_existing", "UPDATE", userId, {
         date: dateString,
         weight,
         hadSideEffects: !!sideEffects,
-        hadNotes: !!notes 
+        hadNotes: !!notes,
+        backdated: isBackdated
       });
     } else {
       // Add new entry
       patient.weightHistory.push(newEntry);
-      await auditDatabaseOperation(req, "add_weight_history_add_new", "UPDATE", userId, { 
+      await auditDatabaseOperation(req, "add_weight_history_add_new", "UPDATE", userId, {
         date: dateString,
         weight,
         hadSideEffects: !!sideEffects,
-        hadNotes: !!notes 
+        hadNotes: !!notes,
+        backdated: isBackdated
       });
     }
 
@@ -277,6 +302,55 @@ export const addWeightHistory = async (req: AuthenticatedRequest, res: Response)
     console.error("Error adding weight history:", error);
     await auditDatabaseError(req, "add_weight_history", "UPDATE", error, req.user?.userId);
     res.status(500).json({ error: "Error adding weight history" });
+  }
+};
+
+// Delete a weight history entry by date (yyyy-mm-dd)
+export const deleteWeightHistory = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+    const { date } = req.params;
+
+    if (!userId) {
+      res.status(401).json({ error: "User not authenticated" });
+      return;
+    }
+
+    if (!date || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      res.status(400).json({ error: "Date must be a string in yyyy-mm-dd format" });
+      return;
+    }
+
+    const patient = await PatientSchema.findById(userId);
+    if (!patient) {
+      await auditDatabaseError(req, "delete_weight_history", "READ", new Error("Patient not found"), userId);
+      res.status(404).json({ error: "Patient not found" });
+      return;
+    }
+
+    const initialLength = patient.weightHistory.length;
+    const remaining = patient.weightHistory.filter(
+      (entry) => entry.date.toISOString().split('T')[0] !== date
+    );
+
+    if (remaining.length === initialLength) {
+      res.status(404).json({ error: "No weight entry found for that date" });
+      return;
+    }
+
+    patient.weightHistory = remaining as typeof patient.weightHistory;
+    await patient.save();
+
+    await auditDatabaseOperation(req, "delete_weight_history", "DELETE", userId, {
+      date,
+      remainingEntries: patient.weightHistory.length
+    });
+
+    res.status(200).json({ message: "Weight history entry deleted" });
+  } catch (error) {
+    console.error("Error deleting weight history:", error);
+    await auditDatabaseError(req, "delete_weight_history", "DELETE", error, req.user?.userId);
+    res.status(500).json({ error: "Error deleting weight history" });
   }
 };
 

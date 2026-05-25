@@ -6,6 +6,7 @@ import {
   updateQuestionnaire,
   addWeightHistory,
   getWeightHistory,
+  deleteWeightHistory,
   getProfile,
   updateProfile,
   getAccessLog
@@ -25,6 +26,7 @@ router.patch("/questionnaire", updateQuestionnaire);
 // Weight history routes
 router.post("/weight-history", addWeightHistory);
 router.get("/weight-history", getWeightHistory);
+router.delete("/weight-history/:date", deleteWeightHistory);
 
 // Profile routes
 router.get("/profile", getProfile);
