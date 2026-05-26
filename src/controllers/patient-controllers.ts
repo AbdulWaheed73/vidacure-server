@@ -72,6 +72,13 @@ export const submitQuestionnaire = async (req: AuthenticatedRequest, res: Respon
     patient.questionnaire = questionnaire;
     patient.phone = normalizeSwedishPhone(phone);
 
+    // Extract goal weight from Q6 and persist on the patient document
+    const goalAnswer = questionnaire.find((q: any) => q.questionId === 'Q6')?.answer;
+    const goalNum = goalAnswer ? parseFloat(goalAnswer) : NaN;
+    if (!isNaN(goalNum) && goalNum > 0 && goalNum <= 500) {
+      patient.goalWeight = goalNum;
+    }
+
     // Mark onboarding as completed when questionnaire is submitted
     patient.hasCompletedOnboarding = true;
     
@@ -416,6 +423,18 @@ export const getProfile = async (req: AuthenticatedRequest, res: Response): Prom
     }
 
     await auditDatabaseOperation(req, "get_profile", "READ", userId);
+
+    // Lazy backfill goalWeight from questionnaire Q6 for patients onboarded before
+    // the questionnaire->goalWeight extraction was in place.
+    if (patient.goalWeight == null) {
+      const goalAns = patient.questionnaire?.find(q => q.questionId === "Q6")?.answer;
+      const goalN = goalAns ? parseFloat(goalAns) : NaN;
+      if (!isNaN(goalN) && goalN > 0 && goalN <= 500) {
+        await PatientSchema.updateOne({ _id: patient._id }, { $set: { goalWeight: goalN } });
+        patient.goalWeight = goalN;
+        await auditDatabaseOperation(req, "update_profile_backfill_goalweight", "UPDATE", userId, { goalWeight: goalN });
+      }
+    }
 
     // Extract date of birth from questionnaire Q2
     const dobAnswer = patient.questionnaire.find(q => q.questionId === "Q2");

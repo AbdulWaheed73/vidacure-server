@@ -339,6 +339,21 @@ export async function getPatientProfile(
       limit: entriesLimit
     });
 
+    // Lazy backfill goalWeight from questionnaire Q6 for patients onboarded before
+    // the questionnaire->goalWeight extraction was in place.
+    let goalWeightValue: number | null = typeof patient.goalWeight === "number" ? patient.goalWeight : null;
+    if (goalWeightValue == null) {
+      const goalAns = Array.isArray(patient.questionnaire)
+        ? patient.questionnaire.find((q: { questionId?: string; answer?: string }) => q.questionId === "Q6")?.answer
+        : undefined;
+      const goalN = goalAns ? parseFloat(goalAns) : NaN;
+      if (!isNaN(goalN) && goalN > 0 && goalN <= 500) {
+        await PatientSchema.updateOne({ _id: patient._id }, { $set: { goalWeight: goalN } });
+        goalWeightValue = goalN;
+        await auditDatabaseOperation(req, "update_profile_backfill_goalweight", "UPDATE", patientId, { goalWeight: goalN });
+      }
+    }
+
     const weightHistory = Array.isArray(patient.weightHistory)
       ? [...patient.weightHistory]
           .sort((a, b) => {
@@ -418,6 +433,7 @@ export async function getPatientProfile(
         gender: patient.gender ?? null,
         height: patient.height ?? null,
         bmi: patient.bmi ?? null,
+        goalWeight: goalWeightValue,
         weightHistory,
         prescription,
         prescriptionRequests
