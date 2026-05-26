@@ -12,6 +12,7 @@ export type PrescriptionRequestT = {
   usageInstructions?: string;
   dateIssued?: Date;
   validTill?: Date;
+  rejectionNote?: string;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -62,4 +63,5 @@ export type UpdatePrescriptionRequestData = {
   usageInstructions?: string;
   dateIssued?: Date;
   validTill?: Date;
+  rejectionNote?: string;
 };

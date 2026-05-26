@@ -105,7 +105,7 @@ export const getPrescriptionRequests = async (req: AuthenticatedRequest, res: Re
 export const updatePrescriptionRequestStatus = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { requestId } = req.params;
-    const { status, medicationName, dosage, usageInstructions, dateIssued, validTill } = req.body;
+    const { status, medicationName, dosage, usageInstructions, dateIssued, validTill, rejectionNote } = req.body;
     const userId = req.user?.userId;
 
     if (!userId) {
@@ -116,6 +116,11 @@ export const updatePrescriptionRequestStatus = async (req: AuthenticatedRequest,
     const validStatuses = Object.values(PrescriptionRequestStatus);
     if (!validStatuses.includes(status)) {
       res.status(400).json({ error: "Invalid status value" });
+      return;
+    }
+
+    if (status === PrescriptionRequestStatus.DENIED && (typeof rejectionNote !== 'string' || !rejectionNote.trim())) {
+      res.status(400).json({ error: "Rejection note is required when denying a prescription request" });
       return;
     }
 
@@ -151,6 +156,10 @@ export const updatePrescriptionRequestStatus = async (req: AuthenticatedRequest,
     if (usageInstructions) request.usageInstructions = usageInstructions;
     if (dateIssued) request.dateIssued = new Date(dateIssued);
     if (validTill) request.validTill = new Date(validTill);
+
+    if (status === PrescriptionRequestStatus.DENIED) {
+      request.rejectionNote = rejectionNote.trim();
+    }
 
     // When approved, also set the top-level prescription field
     if (status === PrescriptionRequestStatus.APPROVED) {

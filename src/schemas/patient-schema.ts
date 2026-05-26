@@ -177,6 +177,7 @@ const PatientSchema: Schema = new Schema(
         usageInstructions: { type: String, required: false },
         dateIssued: { type: Date, required: false },
         validTill: { type: Date, required: false },
+        rejectionNote: { type: String, required: false },
         createdAt: { type: Date, default: Date.now },
         updatedAt: { type: Date, default: Date.now }
       }

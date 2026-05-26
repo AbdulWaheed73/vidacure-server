@@ -128,6 +128,7 @@ export type PatientT = {
     usageInstructions?: string;
     dateIssued?: Date;
     validTill?: Date;
+    rejectionNote?: string;
     createdAt: Date;
     updatedAt: Date;
   }[];
