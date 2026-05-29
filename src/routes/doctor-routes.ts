@@ -8,7 +8,8 @@ import {
   getPatientQuestionnaire,
   getDoctorProfile,
   getUnassignedPatients,
-  getUnassignedPatientQuestionnaire
+  getUnassignedPatientQuestionnaire,
+  getUnassignedPatientProfile
 } from "../controllers/doctor-controllers";
 import { updatePrescriptionRequestStatus } from "../controllers/prescription-controllers";
 import { getPatientLabOrders } from "../controllers/lab-test-controllers";
@@ -32,6 +33,7 @@ router.get("/patient-questionnaire", getPatientQuestionnaire);
 // Unassigned patients routes
 router.get("/unassigned-patients", getUnassignedPatients);
 router.get("/unassigned-patient-questionnaire/:patientId", getUnassignedPatientQuestionnaire);
+router.get("/unassigned-patient-profile/:patientId", getUnassignedPatientProfile);
 
 // Doctor profile route
 router.get("/profile", getDoctorProfile);

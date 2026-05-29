@@ -458,6 +458,138 @@ export async function getPatientProfile(
   }
 }
 
+// Get profile for an UNASSIGNED patient (doctor: null). Sibling of the existing
+// unassigned questionnaire/journal endpoints. Fetches only Overview fields; no writes.
+export async function getUnassignedPatientProfile(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const doctorId = req.user?.userId;
+    const { patientId } = req.params;
+    const { limit } = req.query;
+
+    if (!doctorId) {
+      res.status(401).json({ error: "User not authenticated" });
+      return;
+    }
+
+    if (!patientId || !Types.ObjectId.isValid(patientId)) {
+      res.status(400).json({ error: "A valid patientId is required" });
+      return;
+    }
+
+    const limitValue = Array.isArray(limit) ? limit[0] : limit;
+    const entriesLimit = typeof limitValue === "string" && limitValue.trim() !== ""
+      ? parseInt(limitValue, 10)
+      : 50;
+    if (Number.isNaN(entriesLimit) || entriesLimit <= 0) {
+      res.status(400).json({ error: "Limit must be a positive integer" });
+      return;
+    }
+
+    // Data minimisation: fetch only the fields the Overview tab renders.
+    const patient = await PatientSchema.findOne({
+      _id: patientId,
+      doctor: null
+    })
+      .select("name given_name family_name email phone encryptedSsn dateOfBirth gender height bmi goalWeight weightHistory questionnaire")
+      .lean();
+
+    if (!patient) {
+      await auditDatabaseError(
+        req,
+        "get_unassigned_patient_profile",
+        "READ",
+        new Error("Patient not found or already assigned"),
+        patientId
+      );
+      res.status(404).json({ error: "Patient not found or already assigned to a doctor" });
+      return;
+    }
+
+    await auditDatabaseOperation(req, "get_unassigned_patient_profile", "READ", patientId, {
+      viewedBy: doctorId,
+      limit: entriesLimit
+    });
+
+    // Derive goalWeight from questionnaire Q6 if missing — read-only (no persistence).
+    let goalWeightValue: number | null = typeof patient.goalWeight === "number" ? patient.goalWeight : null;
+    if (goalWeightValue == null) {
+      const goalAns = Array.isArray(patient.questionnaire)
+        ? patient.questionnaire.find((q: { questionId?: string; answer?: string }) => q.questionId === "Q6")?.answer
+        : undefined;
+      const goalN = goalAns ? parseFloat(goalAns) : NaN;
+      if (!isNaN(goalN) && goalN > 0 && goalN <= 500) {
+        goalWeightValue = goalN;
+      }
+    }
+
+    const weightHistory = Array.isArray(patient.weightHistory)
+      ? [...patient.weightHistory]
+          .sort((a, b) => {
+            const aDate = a.date ? new Date(a.date).getTime() : 0;
+            const bDate = b.date ? new Date(b.date).getTime() : 0;
+            return bDate - aDate;
+          })
+          .slice(0, entriesLimit)
+          .map((entry) => ({
+            weight: entry.weight,
+            date: entry.date ? new Date(entry.date).toISOString() : null,
+            sideEffects: entry.sideEffects ?? null,
+            notes: entry.notes ?? null
+          }))
+      : [];
+
+    if (!patient.encryptedSsn) {
+      res.status(500).json({ error: "Patient SSN is missing" });
+      return;
+    }
+    const decryptedSsn = decryptSSN(patient.encryptedSsn);
+    await auditDatabaseOperation(req, "ssn_revealed", "READ", patientId, {
+      accessedBy: "doctor",
+      context: "unassigned_patient_profile_view"
+    });
+
+    res.status(200).json({
+      patientProfile: {
+        id: patient._id?.toString() ?? patientId,
+        name: patient.name,
+        givenName: patient.given_name,
+        familyName: patient.family_name,
+        email: patient.email ?? null,
+        phone: patient.phone ?? null,
+        ssn: decryptedSsn,
+        dateOfBirth: patient.dateOfBirth ? new Date(patient.dateOfBirth).toISOString() : null,
+        gender: patient.gender ?? null,
+        height: patient.height ?? null,
+        bmi: patient.bmi ?? null,
+        goalWeight: goalWeightValue,
+        weightHistory,
+        prescription: null,
+        prescriptionRequests: []
+      },
+      limits: {
+        weightHistory: entriesLimit,
+        prescriptionRequests: entriesLimit
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching unassigned patient profile:", error);
+    await auditDatabaseError(
+      req,
+      "get_unassigned_patient_profile",
+      "READ",
+      error,
+      req.params?.patientId
+    );
+    res.status(500).json({
+      error: "Internal server error",
+      details: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+}
+
 // Get patient questionnaire
 export async function getPatientQuestionnaire(
   req: AuthenticatedRequest,
