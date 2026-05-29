@@ -328,6 +328,33 @@ export const stripeService = {
     return invoices.data;
   },
 
+  /**
+   * Retry payment on a customer's latest open/failed invoice by re-charging
+   * their default payment method. Used for past_due subscriptions.
+   * Returns { paid, status, invoiceId, hostedInvoiceUrl } or null if no payable invoice.
+   */
+  retryLatestInvoicePayment: async (customerId: string) => {
+    const invoices = await stripe.invoices.list({
+      customer: customerId,
+      status: 'open',
+      limit: 1,
+    });
+    const invoice = invoices.data[0];
+    if (!invoice || !invoice.id) {
+      return null;
+    }
+
+    const paid = await stripe.invoices.pay(invoice.id);
+    return {
+      invoiceId: paid.id,
+      paid: paid.status === 'paid',
+      status: paid.status,
+      amountDue: paid.amount_due,
+      currency: paid.currency,
+      hostedInvoiceUrl: paid.hosted_invoice_url ?? null,
+    };
+  },
+
   getCustomerCheckoutPayments: async (customerId: string, limit: number = 24) => {
     const sessions = await stripe.checkout.sessions.list({
       customer: customerId,

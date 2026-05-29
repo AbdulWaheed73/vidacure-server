@@ -268,6 +268,61 @@ export const sendPaymentFailedEmailManual = async (req: AdminAuthenticatedReques
 };
 
 /**
+ * Retry payment for a past_due patient by re-charging their latest open invoice.
+ * POST /api/admin/patients/:patientId/retry-payment
+ */
+export const retryPatientPayment = async (req: AdminAuthenticatedRequest, res: express.Response) => {
+  try {
+    const { patientId } = req.params;
+
+    const patient = await PatientSchema.findById(patientId)
+      .select('subscription')
+      .lean();
+
+    if (!patient) {
+      await auditAdminAction(req, 'admin_retry_payment', 'UPDATE', false, patientId, { reason: 'patient_not_found' });
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    // Guard: retry only makes sense for a past_due subscription.
+    if (patient.subscription?.status !== 'past_due') {
+      await auditAdminAction(req, 'admin_retry_payment', 'UPDATE', false, patientId, { reason: 'not_past_due', status: patient.subscription?.status });
+      return res.status(400).json({ error: 'Patient subscription is not past due' });
+    }
+
+    const customerId = patient.subscription?.stripeCustomerId;
+    if (!customerId) {
+      await auditAdminAction(req, 'admin_retry_payment', 'UPDATE', false, patientId, { reason: 'no_stripe_customer' });
+      return res.status(400).json({ error: 'Patient has no Stripe customer on file' });
+    }
+
+    const result = await stripeService.retryLatestInvoicePayment(customerId);
+
+    if (!result) {
+      await auditAdminAction(req, 'admin_retry_payment', 'UPDATE', false, patientId, { reason: 'no_open_invoice' });
+      return res.status(400).json({ error: 'No open invoice found to retry' });
+    }
+
+    await auditAdminAction(req, 'admin_retry_payment', 'UPDATE', true, patientId, {
+      invoiceId: result.invoiceId,
+      paid: result.paid,
+      status: result.status,
+    });
+
+    res.json({
+      success: result.paid,
+      message: result.paid ? 'Payment retried successfully' : 'Payment retry did not succeed',
+      invoiceStatus: result.status,
+      hostedInvoiceUrl: result.hostedInvoiceUrl,
+    });
+  } catch (error: any) {
+    // Stripe throws (e.g. card_declined) when the retry charge fails.
+    await auditAdminAction(req, 'admin_retry_payment', 'UPDATE', false, req.params.patientId, undefined, error);
+    res.status(400).json({ error: error.message || 'Payment retry failed' });
+  }
+};
+
+/**
  * Reassign patient to a new doctor
  * POST /api/admin/reassign-doctor
  * Body: { patientId: string, newDoctorId: string }

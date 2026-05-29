@@ -29,6 +29,7 @@ import {
   deactivatePromotion,
   getSubscriptionProducts,
   sendPaymentFailedEmailManual,
+  retryPatientPayment,
 } from "../controllers/admin-controllers";
 import {
   listSuggestions,
@@ -53,6 +54,9 @@ router.get("/patients/:patientId/subscription-details", getPatientSubscriptionDe
 
 // Manually send the "payment failed" email to a patient
 router.post("/patients/:patientId/send-payment-failed-email", sendPaymentFailedEmailManual);
+
+// Retry payment for a past_due patient (re-charge latest open invoice)
+router.post("/patients/:patientId/retry-payment", retryPatientPayment);
 
 // Get unassigned patients
 router.get("/unassigned-patients", getUnassignedPatients);
