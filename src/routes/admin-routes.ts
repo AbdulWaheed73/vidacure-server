@@ -20,6 +20,10 @@ import {
   calendlyLookup,
   getAuditLogs,
   getAuditAnomalies,
+  createLogReview,
+  getLogReviews,
+  getLogReviewById,
+  resolveLogReview,
   createPromotion,
   listPromotions,
   deactivatePromotion,
@@ -90,6 +94,11 @@ router.post("/calendly-lookup", calendlyLookup);
 // Audit log review (PDL compliance - systematic log reviews)
 router.get("/audit-logs", getAuditLogs);
 router.get("/audit-logs/anomalies", getAuditAnomalies);
+// Recorded loggkontroll review records (literal /reviews before :id param)
+router.post("/audit-logs/reviews", createLogReview);
+router.get("/audit-logs/reviews", getLogReviews);
+router.get("/audit-logs/reviews/:id", getLogReviewById);
+router.patch("/audit-logs/reviews/:id/resolve", resolveLogReview);
 
 // Platform improvement suggestions — superadmin-only
 router.get("/suggestions", requireAdminRole(['admin']), listSuggestions);

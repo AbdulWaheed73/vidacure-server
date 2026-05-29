@@ -1,9 +1,15 @@
 import express from "express";
+import crypto from "crypto";
 import Stripe from "stripe";
+import { Types } from "mongoose";
 import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
 import ProviderSchema from "../schemas/provider-schema";
+import AdminSchema from "../schemas/admin-schema";
 import AuditLogSchema from "../schemas/auditLog-schema";
+import LogReviewSchema from "../schemas/logReview-schema";
+import { LOG_REVIEW_OUTCOMES, LOG_REVIEW_PARAMETERS } from "../types/log-review-type";
+import type { LogReviewParameter } from "../types/log-review-type";
 import stripeService from "../services/stripe-service";
 import { hashSSN, isValidSwedishSSN } from "../services/auth-service";
 import { getCalendlyUserByEmail, lookupCalendlyMemberByEmail } from "../services/calendly-service";
@@ -1253,10 +1259,21 @@ export const getAuditLogs = async (req: AdminAuthenticatedRequest, res: express.
       AuditLogSchema.countDocuments(filter),
     ]);
 
+    // Attach display names for accessor + target (read-only batched lookup).
+    const nameMap = await resolveUserNames([
+      ...logs.map((l: any) => l.userId),
+      ...logs.map((l: any) => l.targetId),
+    ]);
+    const enrichedLogs = logs.map((l: any) => ({
+      ...l,
+      userName: nameMap[String(l.userId)],
+      targetName: l.targetId ? nameMap[String(l.targetId)] : undefined,
+    }));
+
     await auditAdminAction(req, 'admin_view_audit_logs', 'READ', true, undefined, { page, filters: Object.keys(filter) });
 
     res.json({
-      logs,
+      logs: enrichedLogs,
       pagination: {
         page,
         limit,
@@ -1271,6 +1288,30 @@ export const getAuditLogs = async (req: AdminAuthenticatedRequest, res: express.
 };
 
 /**
+ * Resolve a set of user ObjectIds to display names (read-only).
+ * Accessors may be doctors/admins; targets are patients — query all three collections.
+ */
+async function resolveUserNames(ids: any[]): Promise<Record<string, string>> {
+  const unique = [...new Set(ids.filter(Boolean).map((id) => String(id)))];
+  if (unique.length === 0) return {};
+  const objIds = unique
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+
+  const [patients, doctors, admins] = await Promise.all([
+    PatientSchema.find({ _id: { $in: objIds } }).select('name').lean(),
+    DoctorSchema.find({ _id: { $in: objIds } }).select('name').lean(),
+    AdminSchema.find({ _id: { $in: objIds } }).select('name').lean(),
+  ]);
+
+  const map: Record<string, string> = {};
+  for (const u of [...patients, ...doctors, ...admins]) {
+    map[String((u as any)._id)] = (u as any).name;
+  }
+  return map;
+}
+
+/**
  * Get anomaly detection summary
  * GET /api/admin/audit-logs/anomalies
  * Flags: high-volume access by single user, failed access clusters, unusual hours
@@ -1280,9 +1321,9 @@ export const getAuditAnomalies = async (req: AdminAuthenticatedRequest, res: exp
     const since = new Date();
     since.setDate(since.getDate() - 7); // Last 7 days
 
-    // Users accessing many different patients
+    // Users accessing many different patients (exclude self-access)
     const highVolumeAccessors = await AuditLogSchema.aggregate([
-      { $match: { timestamp: { $gte: since }, targetId: { $exists: true } } },
+      { $match: { timestamp: { $gte: since }, targetId: { $exists: true }, $expr: { $ne: ['$userId', '$targetId'] } } },
       { $group: { _id: '$userId', uniqueTargets: { $addToSet: '$targetId' }, totalAccess: { $sum: 1 } } },
       { $project: { userId: '$_id', uniqueTargetCount: { $size: '$uniqueTargets' }, totalAccess: 1 } },
       { $match: { uniqueTargetCount: { $gt: 20 } } },
@@ -1300,8 +1341,9 @@ export const getAuditAnomalies = async (req: AdminAuthenticatedRequest, res: exp
     ]);
 
     // Access outside business hours (before 7 AM or after 7 PM CET)
+    // Patients accessing their own data is never "unauthorized" — only staff (doctor/admin) is relevant.
     const afterHoursAccess = await AuditLogSchema.aggregate([
-      { $match: { timestamp: { $gte: since } } },
+      { $match: { timestamp: { $gte: since }, role: { $ne: 'patient' } } },
       { $project: { hour: { $hour: { date: '$timestamp', timezone: 'Europe/Stockholm' } }, userId: 1, action: 1, timestamp: 1 } },
       { $match: { $or: [{ hour: { $lt: 7 } }, { hour: { $gte: 19 } }] } },
       { $group: { _id: '$userId', afterHoursCount: { $sum: 1 } } },
@@ -1310,18 +1352,241 @@ export const getAuditAnomalies = async (req: AdminAuthenticatedRequest, res: exp
       { $limit: 10 },
     ]);
 
+    // Repeated access to a SINGLE patient by one staff member (snooping signal); exclude self-access
+    const singlePatientFrequency = await AuditLogSchema.aggregate([
+      { $match: { timestamp: { $gte: since }, role: { $ne: 'patient' }, targetId: { $exists: true }, $expr: { $ne: ['$userId', '$targetId'] } } },
+      { $group: { _id: { userId: '$userId', targetId: '$targetId' }, count: { $sum: 1 }, latestAccess: { $max: '$timestamp' } } },
+      { $match: { count: { $gt: 30 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+    ]);
+
+    // Resolve all referenced IDs to names in one batched read, then attach.
+    const nameMap = await resolveUserNames([
+      ...highVolumeAccessors.map((a: any) => a.userId),
+      ...failedAccessClusters.map((c: any) => c._id?.userId),
+      ...afterHoursAccess.map((a: any) => a._id),
+      ...singlePatientFrequency.flatMap((s: any) => [s._id?.userId, s._id?.targetId]),
+    ]);
+
     await auditAdminAction(req, 'admin_view_audit_anomalies', 'READ', true);
 
     res.json({
       period: { from: since.toISOString(), to: new Date().toISOString() },
       anomalies: {
-        highVolumeAccessors,
-        failedAccessClusters,
-        afterHoursAccess,
+        highVolumeAccessors: highVolumeAccessors.map((a: any) => ({
+          ...a,
+          userName: nameMap[String(a.userId)],
+        })),
+        failedAccessClusters: failedAccessClusters.map((c: any) => ({
+          ...c,
+          userName: nameMap[String(c._id?.userId)],
+        })),
+        afterHoursAccess: afterHoursAccess.map((a: any) => ({
+          ...a,
+          userName: nameMap[String(a._id)],
+        })),
+        singlePatientFrequency: singlePatientFrequency.map((s: any) => ({
+          ...s,
+          userName: nameMap[String(s._id?.userId)],
+          targetName: nameMap[String(s._id?.targetId)],
+        })),
       },
     });
   } catch (error: any) {
     await auditAdminAction(req, 'admin_view_audit_anomalies', 'READ', false, undefined, undefined, error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ============ Log Reviews (PDL loggkontroll — documented review records) ============
+
+const AUDIT_HMAC_KEY = process.env.AUDIT_HMAC_KEY || '';
+
+function generateLogReviewHash(data: {
+  reviewedBy: string;
+  periodFrom: Date;
+  periodTo: Date;
+  outcome: string;
+  createdAt: Date;
+}): string {
+  if (!AUDIT_HMAC_KEY) return '';
+  const payload = JSON.stringify({
+    reviewedBy: data.reviewedBy,
+    periodFrom: data.periodFrom.toISOString(),
+    periodTo: data.periodTo.toISOString(),
+    outcome: data.outcome,
+    createdAt: data.createdAt.toISOString(),
+  });
+  return crypto.createHmac('sha256', AUDIT_HMAC_KEY).update(payload).digest('hex');
+}
+
+/**
+ * Record a completed systematic log review (loggkontroll)
+ * POST /api/admin/audit-logs/reviews
+ */
+export const createLogReview = async (req: AdminAuthenticatedRequest, res: express.Response) => {
+  try {
+    if (!req.admin) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { periodFrom, periodTo, parametersReviewed, outcome, notes, flaggedEntries, anomalySnapshot } = req.body;
+
+    const from = periodFrom ? new Date(periodFrom) : null;
+    const to = periodTo ? new Date(periodTo) : null;
+    if (!from || isNaN(from.getTime()) || !to || isNaN(to.getTime())) {
+      return res.status(400).json({ error: 'Valid periodFrom and periodTo are required' });
+    }
+    if (from > to) {
+      return res.status(400).json({ error: 'periodFrom must be before periodTo' });
+    }
+    if (!(LOG_REVIEW_OUTCOMES as readonly string[]).includes(outcome)) {
+      return res.status(400).json({ error: 'outcome must be one of clean, flagged, escalated' });
+    }
+
+    const params: LogReviewParameter[] = Array.isArray(parametersReviewed)
+      ? parametersReviewed.filter((p: string): p is LogReviewParameter =>
+          (LOG_REVIEW_PARAMETERS as readonly string[]).includes(p))
+      : [];
+
+    const admin = await AdminSchema.findById(req.admin.userId).select('name').lean();
+    const reviewerName = (admin as any)?.name || req.admin.userId;
+
+    const createdAt = new Date();
+    const integrityHash = generateLogReviewHash({
+      reviewedBy: req.admin.userId,
+      periodFrom: from,
+      periodTo: to,
+      outcome,
+      createdAt,
+    });
+
+    const review = await LogReviewSchema.create({
+      reviewedBy: new Types.ObjectId(req.admin.userId),
+      reviewerName,
+      periodFrom: from,
+      periodTo: to,
+      parametersReviewed: params,
+      outcome,
+      notes: typeof notes === 'string' ? notes : undefined,
+      flaggedEntries: Array.isArray(flaggedEntries)
+        ? flaggedEntries.map((id: string) => new Types.ObjectId(id))
+        : undefined,
+      anomalySnapshot: anomalySnapshot && typeof anomalySnapshot === 'object' ? anomalySnapshot : undefined,
+      status: 'open',
+      createdAt,
+      ...(integrityHash && { integrityHash }),
+    });
+
+    await auditAdminAction(req, 'admin_create_log_review', 'CREATE', true, (review._id as Types.ObjectId).toString(), { outcome, parameters: params });
+
+    res.status(201).json({ review });
+  } catch (error: any) {
+    await auditAdminAction(req, 'admin_create_log_review', 'CREATE', false, undefined, undefined, error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * List recorded log reviews with pagination
+ * GET /api/admin/audit-logs/reviews?page=1&limit=20&outcome=&status=
+ */
+export const getLogReviews = async (req: AdminAuthenticatedRequest, res: express.Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const skip = (page - 1) * limit;
+
+    const filter: any = {};
+    if (req.query.outcome && (LOG_REVIEW_OUTCOMES as readonly string[]).includes(req.query.outcome as string)) {
+      filter.outcome = req.query.outcome;
+    }
+    if (req.query.status === 'open' || req.query.status === 'resolved') {
+      filter.status = req.query.status;
+    }
+
+    const [reviews, totalCount] = await Promise.all([
+      LogReviewSchema.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      LogReviewSchema.countDocuments(filter),
+    ]);
+
+    await auditAdminAction(req, 'admin_view_log_reviews', 'READ', true, undefined, { page, filters: Object.keys(filter) });
+
+    res.json({
+      reviews,
+      pagination: { page, limit, totalCount, totalPages: Math.ceil(totalCount / limit) },
+    });
+  } catch (error: any) {
+    await auditAdminAction(req, 'admin_view_log_reviews', 'READ', false, undefined, undefined, error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Get a single log review
+ * GET /api/admin/audit-logs/reviews/:id
+ */
+export const getLogReviewById = async (req: AdminAuthenticatedRequest, res: express.Response) => {
+  try {
+    const { id } = req.params;
+    if (!Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid review id' });
+    }
+
+    const review = await LogReviewSchema.findById(id).lean();
+    if (!review) {
+      return res.status(404).json({ error: 'Log review not found' });
+    }
+
+    await auditAdminAction(req, 'admin_view_log_review', 'READ', true, id);
+
+    res.json({ review });
+  } catch (error: any) {
+    await auditAdminAction(req, 'admin_view_log_review', 'READ', false, req.params.id, undefined, error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Resolve an escalated/open log review
+ * PATCH /api/admin/audit-logs/reviews/:id/resolve
+ */
+export const resolveLogReview = async (req: AdminAuthenticatedRequest, res: express.Response) => {
+  try {
+    if (!req.admin) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id } = req.params;
+    if (!Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid review id' });
+    }
+
+    const { resolutionNotes } = req.body;
+
+    const updated = await LogReviewSchema.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          status: 'resolved',
+          resolvedBy: new Types.ObjectId(req.admin.userId),
+          resolvedAt: new Date(),
+          ...(typeof resolutionNotes === 'string' ? { resolutionNotes } : {}),
+        },
+      },
+      { new: true }
+    ).lean();
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Log review not found' });
+    }
+
+    await auditAdminAction(req, 'admin_resolve_log_review', 'UPDATE', true, id);
+
+    res.json({ review: updated });
+  } catch (error: any) {
+    await auditAdminAction(req, 'admin_resolve_log_review', 'UPDATE', false, req.params.id, undefined, error);
     res.status(500).json({ error: error.message });
   }
 };
