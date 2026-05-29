@@ -1352,12 +1352,34 @@ export const getAuditAnomalies = async (req: AdminAuthenticatedRequest, res: exp
       { $limit: 10 },
     ]);
 
-    // Repeated access to a SINGLE patient by one staff member (snooping signal); exclude self-access
+    // Repeated access to a SINGLE patient by one staff member (snooping signal); exclude self-access.
+    // Join the patient's assigned doctor so out-of-care-relationship access ranks first and is
+    // never crowded out of the top 10 by a doctor's routine access to her own panel.
     const singlePatientFrequency = await AuditLogSchema.aggregate([
       { $match: { timestamp: { $gte: since }, role: { $ne: 'patient' }, targetId: { $exists: true }, $expr: { $ne: ['$userId', '$targetId'] } } },
       { $group: { _id: { userId: '$userId', targetId: '$targetId' }, count: { $sum: 1 }, latestAccess: { $max: '$timestamp' } } },
       { $match: { count: { $gt: 30 } } },
-      { $sort: { count: -1 } },
+      {
+        $lookup: {
+          from: PatientSchema.collection.name,
+          let: { targetId: '$_id.targetId' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$_id', '$$targetId'] } } },
+            { $project: { doctor: 1 } },
+          ],
+          as: 'patientDoc',
+        },
+      },
+      {
+        $addFields: {
+          assignedToAccessor: {
+            $eq: [{ $arrayElemAt: ['$patientDoc.doctor', 0] }, '$_id.userId'],
+          },
+        },
+      },
+      { $project: { patientDoc: 0 } },
+      // false (NOT assigned) sorts before true → genuine signal floats to the top.
+      { $sort: { assignedToAccessor: 1, count: -1 } },
       { $limit: 10 },
     ]);
 
@@ -1368,17 +1390,6 @@ export const getAuditAnomalies = async (req: AdminAuthenticatedRequest, res: exp
       ...afterHoursAccess.map((a: any) => a._id),
       ...singlePatientFrequency.flatMap((s: any) => [s._id?.userId, s._id?.targetId]),
     ]);
-
-    // For each flagged single-patient pair, is the accessor the patient's assigned
-    // doctor? Read-only — labels access as in/out of a care relationship.
-    const spfTargetIds = singlePatientFrequency.map((s: any) => s._id?.targetId).filter(Boolean);
-    const spfPatients = spfTargetIds.length
-      ? await PatientSchema.find({ _id: { $in: spfTargetIds } }).select('doctor').lean()
-      : [];
-    const patientDoctorMap: Record<string, string | null> = {};
-    for (const p of spfPatients) {
-      patientDoctorMap[String((p as any)._id)] = (p as any).doctor ? String((p as any).doctor) : null;
-    }
 
     await auditAdminAction(req, 'admin_view_audit_anomalies', 'READ', true);
 
@@ -1401,7 +1412,6 @@ export const getAuditAnomalies = async (req: AdminAuthenticatedRequest, res: exp
           ...s,
           userName: nameMap[String(s._id?.userId)],
           targetName: nameMap[String(s._id?.targetId)],
-          assignedToAccessor: patientDoctorMap[String(s._id?.targetId)] === String(s._id?.userId),
         })),
       },
     });
