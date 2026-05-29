@@ -71,7 +71,7 @@ export const getAllPatients = async (req: AdminAuthenticatedRequest, res: expres
     const [patients, totalCount] = await Promise.all([
       PatientSchema.find(query)
         .populate('doctor', 'name email _id')
-        .select('name email doctor subscription lastLogin createdAt calendly')
+        .select('name email doctor subscription lastLogin createdAt calendly hasCompletedOnboarding')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
