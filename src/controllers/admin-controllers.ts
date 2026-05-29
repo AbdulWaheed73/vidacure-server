@@ -1369,6 +1369,17 @@ export const getAuditAnomalies = async (req: AdminAuthenticatedRequest, res: exp
       ...singlePatientFrequency.flatMap((s: any) => [s._id?.userId, s._id?.targetId]),
     ]);
 
+    // For each flagged single-patient pair, is the accessor the patient's assigned
+    // doctor? Read-only — labels access as in/out of a care relationship.
+    const spfTargetIds = singlePatientFrequency.map((s: any) => s._id?.targetId).filter(Boolean);
+    const spfPatients = spfTargetIds.length
+      ? await PatientSchema.find({ _id: { $in: spfTargetIds } }).select('doctor').lean()
+      : [];
+    const patientDoctorMap: Record<string, string | null> = {};
+    for (const p of spfPatients) {
+      patientDoctorMap[String((p as any)._id)] = (p as any).doctor ? String((p as any).doctor) : null;
+    }
+
     await auditAdminAction(req, 'admin_view_audit_anomalies', 'READ', true);
 
     res.json({
@@ -1390,6 +1401,7 @@ export const getAuditAnomalies = async (req: AdminAuthenticatedRequest, res: exp
           ...s,
           userName: nameMap[String(s._id?.userId)],
           targetName: nameMap[String(s._id?.targetId)],
+          assignedToAccessor: patientDoctorMap[String(s._id?.targetId)] === String(s._id?.userId),
         })),
       },
     });
