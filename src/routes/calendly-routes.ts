@@ -53,6 +53,7 @@ router.post(
   requireAuth,
   auditMiddleware,
   requireCSRF,
+  requireRole("doctor"),
   generateSingleUseLink
 );
 router.get(

@@ -81,21 +81,25 @@ export async function requireCSRF(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const clientToken = req.headers["x-csrf-token"] as string;
-  const csrf = req.cookies?.csrf_token as string;
-  const clientType = browserDetails(req);
-
-  if (clientType === "app") {
+  // CSRF only applies to cookie-authenticated requests. The mobile app
+  // authenticates via Authorization: Bearer and sends no app_token cookie, so it
+  // is not exposed to CSRF and is skipped here. Gating on the actual auth cookie
+  // (rather than the client-asserted, spoofable x-client header) closes the
+  // header-based CSRF bypass: a cross-site request riding the victim's app_token
+  // cookie can no longer skip the check by sending x-client: app.
+  if (!req.cookies?.app_token) {
     next();
     return;
   }
+
+  const clientToken = req.headers["x-csrf-token"] as string;
+  const csrf = req.cookies?.csrf_token as string;
+
   if (!clientToken) {
     res.status(403).json({ error: "Missing CSRF token" });
     return;
-  }
-  else if (clientToken !== csrf)
-  {
-    res.status(401).json({error: "Wrong CSRF token"});
+  } else if (clientToken !== csrf) {
+    res.status(401).json({ error: "Wrong CSRF token" });
     return;
   }
 

@@ -68,8 +68,10 @@ export const adminLogin = async (
       return;
     }
 
-    // Reset failed attempts on successful password verification
-    await resetFailedAttempts(admin._id!.toString());
+    // NOTE: failed-attempt counter is intentionally NOT reset here. It is shared
+    // with the 2FA step and only cleared on a fully successful login (after 2FA),
+    // so an attacker who knows the password cannot reset the 2FA lockout by
+    // re-running this password step.
 
     await logAuditEvent({
       userId: admin._id!.toString(), role: 'admin', action: 'admin_login_password_verified',
@@ -121,6 +123,16 @@ export const verifyAdmin2FA = async (
       return;
     }
 
+    // Enforce brute-force lockout on the 2FA step (shared counter with password step)
+    const lockout = checkAccountLockout(admin);
+    if (lockout.locked) {
+      res.status(423).json({
+        error: "Account temporarily locked due to too many failed attempts",
+        retryAfter: lockout.retryAfter,
+      });
+      return;
+    }
+
     let valid = false;
 
     if (isBackupCode) {
@@ -146,6 +158,7 @@ export const verifyAdmin2FA = async (
     }
 
     if (!valid) {
+      await recordFailedAttempt(admin._id!.toString());
       await logAuditEvent({
         userId: admin._id!.toString(), role: 'admin', action: 'admin_2fa_failed',
         operation: 'READ', success: false, ipAddress: req.ip || 'unknown',
@@ -155,6 +168,9 @@ export const verifyAdmin2FA = async (
       res.status(401).json({ error: "Invalid verification code" });
       return;
     }
+
+    // Fully authenticated — clear the shared failed-attempt counter / lockout
+    await resetFailedAttempts(admin._id!.toString());
 
     // Update last login
     admin.lastLogin = new Date();
@@ -303,6 +319,9 @@ export const confirmAdmin2FA = async (
     admin.backupCodes = hashedBackupCodes;
     admin.lastLogin = new Date();
     await admin.save();
+
+    // Fully authenticated — clear any stale failed-attempt counter / lockout
+    await resetFailedAttempts(admin._id!.toString());
 
     // Create full admin JWT
     const adminJWT = createAdminJWT(admin);
