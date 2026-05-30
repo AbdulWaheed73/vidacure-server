@@ -327,12 +327,14 @@ export function createAppJWT(user: PatientT | DoctorT | BaseUser): string {
     exp: Math.floor(Date.now() / 1000) + Math.floor(TTL / 1000) // Convert milliseconds to seconds
   };
 
-  return jwt.sign(payload, JWT_SECRET);
+  return jwt.sign(payload, JWT_SECRET, { algorithm: "HS256" });
 }
 
 export function verifyAppJWT(token: string): AppUserClaims | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as AppUserClaims;
+    const decoded = jwt.verify(token, JWT_SECRET, {
+      algorithms: ["HS256"],
+    }) as AppUserClaims;
     return decoded;
   } catch {
     return null;

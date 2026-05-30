@@ -10,6 +10,7 @@ export const validateRequiredEnvVars = () => {
     'FRONTEND_URL',
     'SERVER_URL',
     'SSN_ENCRYPTION_KEY',
+    'ADMIN_2FA_ENCRYPTION_KEY',
   ];
 
   const missingVars: string[] = [];
@@ -54,6 +55,31 @@ export const validateStripePriceIds = () => {
     console.warn(`⚠️  STRIPE_PRICE_MEDICAL appears to be invalid: ${medicalPrice}`);
     console.warn('   Expected format: price_xxxxxxxxxxxxx');
   }
+};
+
+// Validate AES-256-GCM encryption keys are exactly 32 bytes of hex (64 hex chars).
+// Both SSN_ENCRYPTION_KEY and ADMIN_2FA_ENCRYPTION_KEY are consumed via
+// Buffer.from(key, 'hex') for aes-256-gcm, which requires a 32-byte key.
+export const validateEncryptionKeys = () => {
+  const keys = ['SSN_ENCRYPTION_KEY', 'ADMIN_2FA_ENCRYPTION_KEY'];
+  const invalid: string[] = [];
+
+  keys.forEach((name) => {
+    const value = process.env[name];
+    // Presence is enforced by validateRequiredEnvVars; here we only check format.
+    if (value && Buffer.from(value, 'hex').length !== 32) {
+      invalid.push(name);
+    }
+  });
+
+  if (invalid.length > 0) {
+    console.error('❌ Invalid encryption key length (AES-256-GCM needs 32 bytes / 64 hex chars):');
+    invalid.forEach((name) => console.error(`   - ${name}`));
+    console.error('\n💡 Generate a valid key with: openssl rand -hex 32\n');
+    throw new Error(`Invalid encryption key(s): ${invalid.join(', ')}`);
+  }
+
+  console.log('✅ Encryption keys are valid 32-byte hex');
 };
 
 // Validate URLs
@@ -110,6 +136,7 @@ export const validateEnvironment = () => {
 
   try {
     validateRequiredEnvVars();
+    validateEncryptionKeys();
     validateStripePriceIds();
     validateUrls();
     validateGiddirConfig();

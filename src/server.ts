@@ -72,7 +72,7 @@ const getAllowedOrigins = (): string[] => {
 const corsOptions = {
   origin: getAllowedOrigins(),
   methods: "GET,POST,PUT,PATCH,DELETE",
-  allowedHeaders: "Content-Type, Authorization, x-csrf-token, x-client",
+  allowedHeaders: "Content-Type, Authorization, x-csrf-token, x-admin-csrf, x-client",
   credentials: true,
 };
 

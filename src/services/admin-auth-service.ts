@@ -151,14 +151,16 @@ export function createPendingToken(adminId: string): string {
     userId: adminId,
     isPending2FA: true,
   };
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "5m" });
+  return jwt.sign(payload, JWT_SECRET, { algorithm: "HS256", expiresIn: "5m" });
 }
 
 export function verifyPendingToken(
   token: string
 ): { userId: string } | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as PendingJWTPayload;
+    const decoded = jwt.verify(token, JWT_SECRET, {
+      algorithms: ["HS256"],
+    }) as PendingJWTPayload;
     if (!decoded.isPending2FA) {
       return null;
     }
@@ -220,12 +222,14 @@ export function createAdminJWT(admin: AdminT): string {
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + Math.floor(TTL / 1000),
   };
-  return jwt.sign(payload, JWT_SECRET);
+  return jwt.sign(payload, JWT_SECRET, { algorithm: "HS256" });
 }
 
 export function verifyAdminJWT(token: string): AdminJWTPayload | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as AdminJWTPayload;
+    const decoded = jwt.verify(token, JWT_SECRET, {
+      algorithms: ["HS256"],
+    }) as AdminJWTPayload;
 
     if (!decoded.isAdmin) {
       console.log("❌ Regular user token used for admin access - BLOCKED");

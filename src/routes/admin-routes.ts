@@ -1,5 +1,5 @@
 import express from "express";
-import { requireAdminAuth, requireAdminRole } from "../middleware/admin-auth-middleware";
+import { requireAdminAuth, requireAdminRole, requireAdminCSRF } from "../middleware/admin-auth-middleware";
 import {
   getDashboardStats,
   getAllPatients,
@@ -42,6 +42,8 @@ const router = express.Router();
 // Regular user tokens (app_token) are rejected
 router.use(requireAdminAuth);
 router.use(requireAdminRole(['admin', 'superadmin']));
+// CSRF protection for all state-changing admin routes (GET/HEAD/OPTIONS skipped)
+router.use(requireAdminCSRF);
 
 // Dashboard statistics
 router.get("/dashboard", getDashboardStats);

@@ -9,7 +9,7 @@ import {
 import { exportMyData } from '../controllers/data-export-controller';
 import { getMySSN } from '../controllers/ssn-controller';
 import { requireAuth, requireCSRF } from '../middleware/auth-middleware';
-import { requireAdminAuth } from '../middleware/admin-auth-middleware';
+import { requireAdminAuth, requireAdminCSRF } from '../middleware/admin-auth-middleware';
 import { auditMiddleware } from '../middleware/audit-middleware';
 
 const router = express.Router();
@@ -74,6 +74,7 @@ router.post(
 router.delete(
   '/admin/:userId',
   requireAdminAuth,
+  requireAdminCSRF,
   auditMiddleware,
   deleteUserByAdmin
 );

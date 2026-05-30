@@ -87,7 +87,7 @@ export const adminLogin = async (
       // Normal login — require 2FA code
       res.json({ requires2FA: true, pendingToken });
     }
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: "Login failed" });
   }
 };
@@ -192,8 +192,9 @@ export const verifyAdmin2FA = async (
         role: admin.role,
         isAdmin: true,
       },
+      csrfToken,
     });
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: "Verification failed" });
   }
 };
@@ -335,8 +336,9 @@ export const confirmAdmin2FA = async (
         role: admin.role,
         isAdmin: true,
       },
+      csrfToken,
     });
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: "2FA confirmation failed" });
   }
 };

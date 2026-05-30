@@ -4,7 +4,7 @@ import {
   resolveNotification,
   getNotificationCount
 } from '../controllers/admin-notification-controller';
-import { requireAdminAuth } from '../middleware/admin-auth-middleware';
+import { requireAdminAuth, requireAdminCSRF } from '../middleware/admin-auth-middleware';
 import { auditMiddleware } from '../middleware/audit-middleware';
 
 const router = express.Router();
@@ -36,6 +36,7 @@ router.get(
 router.put(
   '/:notificationId/resolve',
   requireAdminAuth,
+  requireAdminCSRF,
   auditMiddleware,
   resolveNotification
 );

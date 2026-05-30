@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { verifyAdminJWT, AdminJWTPayload } from "../services/admin-auth-service";
 
 // Extend Request to include admin user
@@ -95,6 +96,49 @@ export function requireAdminAuth(
       message: "Failed to authenticate admin user",
     });
   }
+}
+
+/**
+ * Admin CSRF protection (double-submit cookie pattern).
+ * The admin_csrf_token cookie is set non-httpOnly at login so the admin web
+ * client can echo it back in the x-admin-csrf header. A cross-site attacker can
+ * make the browser send the admin_token cookie, but cannot read the cookie's
+ * value to set the matching header — so a mismatch/absence blocks the request.
+ *
+ * Safe methods (GET/HEAD/OPTIONS) are skipped — they don't mutate state — so
+ * this can be mounted via router.use() on routers that mix reads and writes.
+ */
+export function requireAdminCSRF(
+  req: AdminAuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+    next();
+    return;
+  }
+
+  const headerToken = req.headers["x-admin-csrf"] as string | undefined;
+  const cookieToken = req.cookies?.admin_csrf_token as string | undefined;
+
+  if (!headerToken || !cookieToken) {
+    res.status(403).json({ error: "Missing admin CSRF token" });
+    return;
+  }
+
+  const headerBuf = Buffer.from(headerToken);
+  const cookieBuf = Buffer.from(cookieToken);
+
+  // timingSafeEqual throws if lengths differ — guard first, treat as mismatch.
+  if (
+    headerBuf.length !== cookieBuf.length ||
+    !crypto.timingSafeEqual(headerBuf, cookieBuf)
+  ) {
+    res.status(403).json({ error: "Invalid admin CSRF token" });
+    return;
+  }
+
+  next();
 }
 
 /**

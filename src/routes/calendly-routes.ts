@@ -11,7 +11,7 @@ import {
   markMeetingCompleteByEmail
 } from "../controllers/calendly-controllers";
 import { requireAuth, requireCSRF, requireRole } from "../middleware/auth-middleware";
-import { requireAdminAuth, requireAdminRole } from "../middleware/admin-auth-middleware";
+import { requireAdminAuth, requireAdminRole, requireAdminCSRF } from "../middleware/admin-auth-middleware";
 import { auditMiddleware } from "../middleware/audit-middleware";
 
 const router = Router();
@@ -70,6 +70,7 @@ router.post(
   "/mark-complete/:patientId",
   requireAdminAuth,
   requireAdminRole(['admin', 'superadmin']),
+  requireAdminCSRF,
   auditMiddleware,
   markMeetingComplete
 );
@@ -80,6 +81,7 @@ router.post(
   "/mark-complete-by-email",
   requireAdminAuth,
   requireAdminRole(['admin', 'superadmin']),
+  requireAdminCSRF,
   auditMiddleware,
   markMeetingCompleteByEmail
 );
