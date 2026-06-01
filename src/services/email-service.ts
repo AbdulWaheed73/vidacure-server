@@ -832,3 +832,116 @@ export const sendHypnotherapistReceipt = async (
     console.error("Failed to send hypnotherapist receipt:", err);
   }
 };
+
+// ── Prescription Request Notification (to doctor) ───────────────────
+
+type PrescriptionRequestNotificationParams = {
+  to: string; // doctor email
+  doctorName: string;
+  patientName: string;
+  requestedAt: Date;
+};
+
+export const sendPrescriptionRequestNotification = async (
+  params: PrescriptionRequestNotificationParams
+): Promise<void> => {
+  const { to, doctorName, patientName, requestedAt } = params;
+  const from = process.env.RESEND_FROM_EMAIL || "info@vidacure.se";
+  const portalUrl = process.env.FRONTEND_URL || "https://www.vidacure.se";
+
+  const requestedAtFormatted = new Intl.DateTimeFormat("sv-SE", {
+    dateStyle: "long",
+    timeStyle: "short",
+  }).format(requestedAt);
+
+  const html = `
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ny receptförfrågan</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f0f7f4;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f7f4;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+
+          <!-- Header -->
+          <tr>
+            <td style="padding:28px 32px 16px;text-align:center;">
+              <h1 style="margin:0;font-size:28px;font-weight:700;color:#005044;letter-spacing:-0.5px;">Vidacure</h1>
+              <hr style="border:none;border-top:2px solid #009689;margin:16px auto 0;width:80px;" />
+            </td>
+          </tr>
+
+          <!-- Message -->
+          <tr>
+            <td style="padding:8px 32px 24px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#e6f5f3;border-radius:8px;border-left:4px solid #009689;">
+                <tr>
+                  <td style="padding:20px 24px;">
+                    <h2 style="margin:0 0 12px;font-size:20px;color:#005044;">Ny receptförfrågan</h2>
+                    <p style="margin:0 0 8px;font-size:14px;color:#333;line-height:1.6;">
+                      Hej ${doctorName},
+                    </p>
+                    <p style="margin:0;font-size:14px;color:#333;line-height:1.6;">
+                      Din patient <strong>${patientName}</strong> har skickat in en receptförfrågan.
+                    </p>
+                    <p style="margin:12px 0 0;font-size:13px;color:#555;line-height:1.6;">
+                      Inskickad: ${requestedAtFormatted}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- CTA -->
+          <tr>
+            <td style="padding:0 32px 24px;text-align:center;">
+              <p style="margin:0 0 16px;font-size:14px;color:#444;line-height:1.6;">
+                Logga in på Vidacure för att granska och hantera förfrågan.
+              </p>
+              <a href="${portalUrl}" style="display:inline-block;padding:12px 28px;background-color:#009689;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:6px;">
+                Granska förfrågan
+              </a>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px 32px;background-color:#f0f7f4;text-align:center;border-top:1px solid #e0ebe8;">
+              <p style="margin:0 0 4px;font-size:12px;color:#777;">&copy; 2026 Vidacure</p>
+              <p style="margin:0;font-size:12px;">
+                <a href="https://www.vidacure.se" style="color:#009689;text-decoration:none;">www.vidacure.se</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  try {
+    const { error } = await resend.emails.send({
+      from,
+      to,
+      subject: `Ny receptförfrågan – ${patientName}`,
+      html,
+    });
+
+    if (error) {
+      console.error("Resend API error sending prescription request notification:", error);
+    } else {
+      console.log("Prescription request notification sent to:", to);
+    }
+  } catch (err) {
+    console.error("Failed to send prescription request notification:", err);
+  }
+};

@@ -1,9 +1,11 @@
 import { Response } from "express";
 import { Types } from "mongoose";
 import PatientSchema from "../schemas/patient-schema";
+import DoctorSchema from "../schemas/doctor-schema";
 import { AuthenticatedRequest } from "../types/generic-types";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
 import { PrescriptionRequestStatus } from "../types/prescription-types";
+import { sendPrescriptionRequestNotification } from "../services/email-service";
 
 // Create prescription request
 export const createPrescriptionRequest = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -53,6 +55,19 @@ export const createPrescriptionRequest = async (req: AuthenticatedRequest, res: 
       hasSideEffects,
       hasDescription: !!sideEffectsDescription
     });
+
+    // Notify the patient's assigned doctor (fire-and-forget — never blocks the response)
+    if (patient.doctor) {
+      const doctor = await DoctorSchema.findById(patient.doctor).select("name given_name email");
+      if (doctor?.email) {
+        sendPrescriptionRequestNotification({
+          to: doctor.email,
+          doctorName: doctor.given_name || doctor.name || "Doctor",
+          patientName: patient.given_name || patient.name || "Patient",
+          requestedAt: newRequest.createdAt,
+        }).catch(() => {});
+      }
+    }
 
     res.status(201).json({
       message: "Prescription request created successfully",
