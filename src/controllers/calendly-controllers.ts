@@ -601,6 +601,8 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
       .filter((uri: string | undefined): uri is string => typeof uri === "string");
 
     const knownUris = new Set<string>();
+    // Map eventUri -> patient phone so the doctor can message the patient.
+    const phoneByUri = new Map<string, string>();
     if (pageUris.length > 0) {
       const patientsWithMatches = await PatientSchema.find(
         {
@@ -612,16 +614,23 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
         {
           "calendly.meetings.eventUri": 1,
           "providerMeetings.eventUri": 1,
+          phone: 1,
           _id: 0,
         }
       ).lean();
 
       for (const p of patientsWithMatches as any[]) {
         p.calendly?.meetings?.forEach((m: any) => {
-          if (m.eventUri) knownUris.add(m.eventUri);
+          if (m.eventUri) {
+            knownUris.add(m.eventUri);
+            if (p.phone) phoneByUri.set(m.eventUri, p.phone);
+          }
         });
         p.providerMeetings?.forEach((m: any) => {
-          if (m.eventUri) knownUris.add(m.eventUri);
+          if (m.eventUri) {
+            knownUris.add(m.eventUri);
+            if (p.phone) phoneByUri.set(m.eventUri, p.phone);
+          }
         });
       }
     }
@@ -653,7 +662,8 @@ export const getDoctorOwnMeetings = async (req: AuthenticatedRequest, res: Respo
           cancelUrl: meeting.cancel_url || null,
           rescheduleUrl: meeting.reschedule_url || null,
           calendlyHostName: meeting.event_memberships?.[0]?.user_name || null,
-          calendlyHostEmail: meeting.event_memberships?.[0]?.user_email || null
+          calendlyHostEmail: meeting.event_memberships?.[0]?.user_email || null,
+          patientPhone: phoneByUri.get(meeting.uri) || null
         };
       })
     );
