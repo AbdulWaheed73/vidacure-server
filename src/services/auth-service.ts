@@ -117,12 +117,19 @@ export async function verifyCriiptoToken(token: string): Promise<CriiptoUserClai
         {
           algorithms: ['RS256'], // Criipto uses RS256
           issuer: `https://${domain}`, // Validate issuer matches Criipto domain
+          // Match @criipto/verify-express default (5 min) — avoids "jwt not active" from nbf/clock skew
+          clockTolerance: 5 * 60,
           // Note: We don't validate audience here because tokens can come from both web and app clients
           // The signature verification and issuer check provide sufficient security
         },
         (verifyErr: jwt.VerifyErrors | null, verifiedToken: string | jwt.JwtPayload | undefined) => {
           if (verifyErr) {
-            console.error('❌ Token verification failed:', verifyErr.message);
+            const payload = decoded.payload as jwt.JwtPayload;
+            console.error('❌ Token verification failed:', verifyErr.message, {
+              serverTime: new Date().toISOString(),
+              nbf: payload.nbf ? new Date(payload.nbf * 1000).toISOString() : undefined,
+              exp: payload.exp ? new Date(payload.exp * 1000).toISOString() : undefined,
+            });
             return reject(new Error(`Token verification failed: ${verifyErr.message}`));
           }
 
