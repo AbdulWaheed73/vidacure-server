@@ -362,6 +362,10 @@ export const getSubscriptionStatus = async (
     res.json({
       hasSubscription: !!patient.subscription?.stripeSubscriptionId && isActiveSubscription,
       subscriptionStatus: liveStatus || patient.subscription?.status,
+      // DB-backed flag, kept in sync by Stripe webhooks. This is the same source the
+      // prescription gate (blockPastDueSubscription middleware) enforces on, so the UI
+      // warns about exactly what the server will block.
+      isPastDue: patient.subscription?.status === "past_due",
       planType: patient.subscription?.planType,
       subscription: subscriptionData,
     });

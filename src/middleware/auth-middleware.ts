@@ -178,6 +178,53 @@ export async function requireActiveSubscription(
   }
 }
 
+// Blocks mutating actions (e.g. creating a prescription request) when a patient's
+// subscription payment is past due. Unlike requireActiveSubscription, this is meant to
+// be attached to specific mutation routes only, so reads (e.g. prescription history)
+// remain accessible during the grace period.
+export async function blockPastDueSubscription(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  if (!req.user) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  // Only patients have subscriptions; let other roles through.
+  if (req.user.role !== "patient") {
+    next();
+    return;
+  }
+
+  try {
+    const patient = await PatientSchema.findById(req.user.userId)
+      .select("subscription.status")
+      .lean();
+
+    if (!patient) {
+      res.status(404).json({ error: "Patient not found" });
+      return;
+    }
+
+    if (patient.subscription?.status === "past_due") {
+      res.status(403).json({
+        error: "subscription_past_due",
+        message:
+          "Your subscription payment is past due. Please update your billing to request a prescription.",
+      });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    console.error("❌ Error checking past due subscription status:", error);
+    res.status(500).json({ error: "Failed to verify subscription status" });
+    return;
+  }
+}
+
 // Combined middleware for doctor-only access
 // export function requireDoctor(
 //   req: AuthenticatedRequest,
