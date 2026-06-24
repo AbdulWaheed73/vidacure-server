@@ -250,7 +250,7 @@ export async function getDoctorPatients(
     }
 
     const patients = await PatientSchema.find({ doctor: doctorId })
-      .select("name given_name family_name email dateOfBirth gender height bmi createdAt updatedAt subscription.status subscription.planType")
+      .select("name given_name family_name email dateOfBirth gender height bmi createdAt updatedAt subscription.status subscription.planType subscription.currentPeriodEnd")
       .sort({ name: 1 })
       .lean();
 
@@ -271,7 +271,10 @@ export async function getDoctorPatients(
       createdAt: patient.createdAt ? new Date(patient.createdAt).toISOString() : null,
       updatedAt: patient.updatedAt ? new Date(patient.updatedAt).toISOString() : null,
       subscriptionStatus: patient.subscription?.status ?? null,
-      subscriptionPlan: patient.subscription?.planType ?? null
+      subscriptionPlan: patient.subscription?.planType ?? null,
+      subscriptionCurrentPeriodEnd: patient.subscription?.currentPeriodEnd
+        ? new Date(patient.subscription.currentPeriodEnd).toISOString()
+        : null
     }));
 
     res.status(200).json({
@@ -435,7 +438,12 @@ export async function getPatientProfile(
         goalWeight: goalWeightValue,
         weightHistory,
         prescription,
-        prescriptionRequests
+        prescriptionRequests,
+        subscriptionStatus: patient.subscription?.status ?? null,
+        subscriptionPlan: patient.subscription?.planType ?? null,
+        subscriptionCurrentPeriodEnd: patient.subscription?.currentPeriodEnd
+          ? new Date(patient.subscription.currentPeriodEnd).toISOString()
+          : null
       },
       limits: {
         weightHistory: entriesLimit,
@@ -493,7 +501,7 @@ export async function getUnassignedPatientProfile(
       _id: patientId,
       doctor: null
     })
-      .select("name given_name family_name email phone encryptedSsn dateOfBirth gender height bmi goalWeight weightHistory questionnaire")
+      .select("name given_name family_name email phone encryptedSsn dateOfBirth gender height bmi goalWeight weightHistory questionnaire subscription.status subscription.planType subscription.currentPeriodEnd")
       .lean();
 
     if (!patient) {
@@ -567,7 +575,12 @@ export async function getUnassignedPatientProfile(
         goalWeight: goalWeightValue,
         weightHistory,
         prescription: null,
-        prescriptionRequests: []
+        prescriptionRequests: [],
+        subscriptionStatus: patient.subscription?.status ?? null,
+        subscriptionPlan: patient.subscription?.planType ?? null,
+        subscriptionCurrentPeriodEnd: patient.subscription?.currentPeriodEnd
+          ? new Date(patient.subscription.currentPeriodEnd).toISOString()
+          : null
       },
       limits: {
         weightHistory: entriesLimit,
@@ -715,7 +728,7 @@ export async function getUnassignedPatients(
       doctor: null,
       "questionnaire.0": { $exists: true }
     })
-      .select("name given_name family_name email dateOfBirth gender createdAt subscription.status subscription.planType")
+      .select("name given_name family_name email dateOfBirth gender createdAt subscription.status subscription.planType subscription.currentPeriodEnd")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -736,7 +749,10 @@ export async function getUnassignedPatients(
       createdAt: patient.createdAt ? new Date(patient.createdAt).toISOString() : null,
       updatedAt: null,
       subscriptionStatus: patient.subscription?.status ?? null,
-      subscriptionPlan: patient.subscription?.planType ?? null
+      subscriptionPlan: patient.subscription?.planType ?? null,
+      subscriptionCurrentPeriodEnd: patient.subscription?.currentPeriodEnd
+        ? new Date(patient.subscription.currentPeriodEnd).toISOString()
+        : null
     }));
 
     res.status(200).json({ patients: formattedPatients });
