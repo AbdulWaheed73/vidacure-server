@@ -35,6 +35,12 @@ import {
   listSuggestions,
   deleteSuggestion,
 } from "../controllers/suggestion-controllers";
+import {
+  createEmailTemplate,
+  listEmailTemplates,
+  updateEmailTemplate,
+  deleteEmailTemplate,
+} from "../controllers/email-template-controllers";
 
 const router = express.Router();
 
@@ -105,6 +111,12 @@ router.post("/audit-logs/reviews", createLogReview);
 router.get("/audit-logs/reviews", getLogReviews);
 router.get("/audit-logs/reviews/:id", getLogReviewById);
 router.patch("/audit-logs/reviews/:id/resolve", resolveLogReview);
+
+// Drip-email template stock (monthly automated patient emails)
+router.post("/email-templates", createEmailTemplate);
+router.get("/email-templates", listEmailTemplates);
+router.put("/email-templates/:templateId", updateEmailTemplate);
+router.delete("/email-templates/:templateId", deleteEmailTemplate);
 
 // Platform improvement suggestions — superadmin-only
 router.get("/suggestions", requireAdminRole(['admin']), listSuggestions);
