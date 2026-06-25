@@ -22,10 +22,13 @@ import adminNotificationRoutes from "./routes/admin-notification-routes";
 import pendingBookingRoutes from "./routes/pending-booking-routes";
 import providerRoutes from "./routes/provider-routes";
 import suggestionRoutes from "./routes/suggestion-routes";
+import clientErrorRoutes from "./routes/client-error-routes";
 import { requireAuth, requireCSRF, requireRole, requireActiveSubscription } from "./middleware/auth-middleware";
 // import { globalApiRateLimiter } from "./middleware/rate-limit-middleware";
 import { auditMiddleware } from "./middleware/audit-middleware";
 import { startAuditFlushTimer } from "./services/audit-service";
+import { startErrorLogWriter } from "./services/error-log-service";
+import { errorCaptureMiddleware, globalErrorHandler } from "./middleware/error-capture-middleware";
 import { requireConsent } from "./middleware/consent-middleware";
 import os from 'os';
 
@@ -52,6 +55,7 @@ databaseConnection()
   .then(() => {
     console.log("🚀 MongoDB connection established.");
     startAuditFlushTimer();
+    startErrorLogWriter();
   })
   .catch((err) => {
     console.error("🔥 MongoDB connection failed:", err);
@@ -110,6 +114,9 @@ app.use('/api/lab-tests/webhook', express.raw({ type: 'application/json' }));
 
 app.use(express.json());
 app.use(cookieParser());
+
+// Capture any 5xx response as an error log (runs on res 'finish' — zero added latency).
+app.use(errorCaptureMiddleware);
 
 // Global API rate limiting — 100 requests per 15 min per IP (skip webhooks)
 // app.use("/api", (req, res, next) => {
@@ -170,6 +177,13 @@ app.use("/api/consent", consentRoutes);
 
 // Admin notification routes
 app.use("/api/admin/notifications", adminNotificationRoutes);
+
+// Public client crash/error ingest (rate-limited, validated, scrubbed)
+app.use("/api/client-errors", clientErrorRoutes);
+
+// Global error handler — records unhandled throws, then returns a generic 500.
+// Must be registered AFTER all routes.
+app.use(globalErrorHandler);
 
 export { app };
 

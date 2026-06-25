@@ -35,6 +35,12 @@ import {
   listSuggestions,
   deleteSuggestion,
 } from "../controllers/suggestion-controllers";
+import {
+  getErrorLogs,
+  getErrorLog,
+  getErrorLogSummary,
+  resolveErrorLog,
+} from "../controllers/error-log-controllers";
 
 const router = express.Router();
 
@@ -105,6 +111,12 @@ router.post("/audit-logs/reviews", createLogReview);
 router.get("/audit-logs/reviews", getLogReviews);
 router.get("/audit-logs/reviews/:id", getLogReviewById);
 router.patch("/audit-logs/reviews/:id/resolve", resolveLogReview);
+
+// Error / crash logs (small single-purpose routes; /summary before /:id)
+router.get("/error-logs", getErrorLogs);
+router.get("/error-logs/summary", getErrorLogSummary);
+router.get("/error-logs/:id", getErrorLog);
+router.post("/error-logs/:id/resolve", resolveErrorLog);
 
 // Platform improvement suggestions — superadmin-only
 router.get("/suggestions", requireAdminRole(['admin']), listSuggestions);

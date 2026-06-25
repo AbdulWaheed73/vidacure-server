@@ -57,6 +57,15 @@ export const RETENTION_RULES: Record<string, RetentionRule> = {
     description: 'Records of data deletion retained indefinitely for compliance proof',
   },
 
+  error_logs: {
+    // Operational logs only (no clinical/PII). Enforced by a 90-day MongoDB TTL index
+    // on the ErrorLog collection (sub-year, so not expressible in whole years here).
+    retentionYears: 0,
+    indefinite: false,
+    legalBasis: 'Operational troubleshooting — no legal retention mandate; minimise per GDPR Art. 5(1)(e)',
+    description: 'Error/crash logs auto-deleted after 90 days via TTL index',
+  },
+
   subscription_data: {
     retentionYears: 7,
     indefinite: false,

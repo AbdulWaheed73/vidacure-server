@@ -15,6 +15,7 @@ import { hashSSN, isValidSwedishSSN } from "../services/auth-service";
 import { getCalendlyUserByEmail, lookupCalendlyMemberByEmail } from "../services/calendly-service";
 import { AdminAuthenticatedRequest } from "../middleware/admin-auth-middleware";
 import { auditAdminAction } from "../middleware/audit-middleware";
+import { resolveUserNames } from "../utils/resolve-user-names";
 import { notifyChatReassignDoctor } from "../services/chat-client-service";
 import { LAB_TEST_PACKAGES } from "../config/lab-test-packages";
 import { sendPaymentFailedEmail } from "../services/email-service";
@@ -1346,26 +1347,6 @@ export const getAuditLogs = async (req: AdminAuthenticatedRequest, res: express.
  * Resolve a set of user ObjectIds to display names (read-only).
  * Accessors may be doctors/admins; targets are patients — query all three collections.
  */
-async function resolveUserNames(ids: any[]): Promise<Record<string, string>> {
-  const unique = [...new Set(ids.filter(Boolean).map((id) => String(id)))];
-  if (unique.length === 0) return {};
-  const objIds = unique
-    .filter((id) => Types.ObjectId.isValid(id))
-    .map((id) => new Types.ObjectId(id));
-
-  const [patients, doctors, admins] = await Promise.all([
-    PatientSchema.find({ _id: { $in: objIds } }).select('name').lean(),
-    DoctorSchema.find({ _id: { $in: objIds } }).select('name').lean(),
-    AdminSchema.find({ _id: { $in: objIds } }).select('name').lean(),
-  ]);
-
-  const map: Record<string, string> = {};
-  for (const u of [...patients, ...doctors, ...admins]) {
-    map[String((u as any)._id)] = (u as any).name;
-  }
-  return map;
-}
-
 /**
  * Get anomaly detection summary
  * GET /api/admin/audit-logs/anomalies

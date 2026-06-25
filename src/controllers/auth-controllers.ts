@@ -16,6 +16,7 @@ import {
   storeOAuthState,
   consumeOAuthState,
 } from "../services/auth-service";
+import { recordError, extractIpAddress, parseUserAgent } from "../services/error-log-service";
 import { consentService } from "../services/consent-service";
 import { CriiptoUserClaims } from "../types/generic-types";
 import Patient from "../schemas/patient-schema";
@@ -302,6 +303,22 @@ export const handleCallback = async (
     const stateValid = cookieMatch || storeResult === "fresh";
     if (!state || !stateValid) {
       console.error(`❌ Invalid state parameter (cookiePresent=${!!cookieState}, cookieMatch=${cookieMatch}, storeResult=${storeResult})`);
+      recordError({
+        origin: "server",
+        source: "api",
+        level: "warning",
+        category: "auth",
+        message: "BankID callback rejected: invalid state parameter",
+        route: req.path,
+        method: req.method,
+        statusCode: 400,
+        actorType: "anonymous",
+        ipAddress: extractIpAddress(req),
+        userAgent: parseUserAgent(req.headers["user-agent"]),
+        context: {
+          details: `cookiePresent=${!!cookieState} cookieMatch=${cookieMatch} storeResult=${storeResult} hasState=${!!state}`,
+        },
+      });
       res.status(400).json({ error: "Invalid state parameter" });
       return;
     }
