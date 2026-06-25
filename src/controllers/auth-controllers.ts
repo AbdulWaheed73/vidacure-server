@@ -13,6 +13,8 @@ import {
   getRedirectUri,
   getClientSecret,
   verifyCriiptoToken,
+  storeOAuthState,
+  consumeOAuthState,
 } from "../services/auth-service";
 import { consentService } from "../services/consent-service";
 import { CriiptoUserClaims } from "../types/generic-types";
@@ -23,7 +25,7 @@ import { browserDetails } from "../middleware/auth-middleware";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
 import { logAuditEvent } from "../services/audit-service";
 
-export const initiateLogin = (req: Request, res: Response): void => {
+export const initiateLogin = async (req: Request, res: Response): Promise<void> => {
   try {
     const state = generateRandomState();
     const clientType = browserDetails(req);
@@ -43,8 +45,17 @@ export const initiateLogin = (req: Request, res: Response): void => {
         acrValues = "urn:grn:authn:se:bankid:another-device:qr";
     }
 
+    const redirectUri = getRedirectUri(req);
+
+    // Diagnostic: these inputs decide whether the patient gets the same-device flow
+    // (the one prone to cookie-jar loss). host should always be the canonical apex.
+    console.log(
+      `🔐 [login] host=${req.headers.host} xfproto=${req.headers["x-forwarded-proto"] ?? "-"} ` +
+      `clientType=${clientType} acr=${acrValues} redirectUri=${redirectUri} state=${state.slice(0, 8)}…`
+    );
+
     const url = buildAuthorizeURL(getAppConfig(), {
-      redirect_uri: getRedirectUri(req),
+      redirect_uri: redirectUri,
       response_type: "code",
       scope: "openid profile",
       state,
@@ -57,6 +68,11 @@ export const initiateLogin = (req: Request, res: Response): void => {
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: Number(process.env.TTL),
     });
+
+    // Also persist state server-side as a fallback: the same-device BankID round-trip
+    // can land the callback in a different browser/cookie jar (in-app browser → Safari),
+    // which loses the cookie above. Best-effort — login still works via cookie if this fails.
+    await storeOAuthState(state);
 
     res.redirect(url.toString());
   } catch (error) {
@@ -255,15 +271,42 @@ export const handleCallback = async (
     const error: string | undefined =
       (req.query?.error as string) || (req.body?.error as string);
 
-    // Validate state parameter (CSRF protection)
-    const storedState = req.cookies.oauth_state;
+    // Validate state parameter (CSRF protection).
+    // Primary path: match against the httpOnly cookie set at login.
+    // Fallback path: match against the server-side single-use store — needed when the
+    // same-device BankID return lands in a different cookie jar and the cookie is absent.
+    const cookieState = req.cookies.oauth_state;
+    const cookieMatch = !!state && state === cookieState;
+    // "fresh" | "duplicate" | "invalid" | "error" — also consumes the entry when fresh.
+    const storeResult = state ? await consumeOAuthState(state) : "invalid";
 
+    // Diagnostic snapshot: tells us, per failing patient, EXACTLY which signal was missing
+    // — lost cookie, cross-host/jar mismatch, never-issued state, or a duplicate callback.
+    console.log(
+      `🔁 [callback] host=${req.headers.host} xfproto=${req.headers["x-forwarded-proto"] ?? "-"} ` +
+      `hasCode=${!!code} state=${state ? state.slice(0, 8) + "…" : "MISSING"} ` +
+      `cookiePresent=${!!cookieState} cookieMatch=${cookieMatch} storeResult=${storeResult} ` +
+      `ua="${(req.headers["user-agent"] || "").slice(0, 90)}"`
+    );
 
-    if (!state || state !== storedState) {
-      console.error("❌ Invalid state parameter");
+    // Benign duplicate callback (e.g. iOS Safari firing the callback twice): the first hit
+    // already completed login. Don't dead-end on a raw JSON error — bounce to the frontend,
+    // which re-checks the session (logs the user in if cookies are in this jar, else shows login).
+    if (!cookieMatch && storeResult === "duplicate") {
+      console.warn("♻️ [callback] duplicate callback detected — redirecting to frontend instead of erroring");
+      res.clearCookie("oauth_state");
+      res.redirect(`${process.env.FRONTEND_URL}/login?auth=retry`);
+      return;
+    }
+
+    const stateValid = cookieMatch || storeResult === "fresh";
+    if (!state || !stateValid) {
+      console.error(`❌ Invalid state parameter (cookiePresent=${!!cookieState}, cookieMatch=${cookieMatch}, storeResult=${storeResult})`);
       res.status(400).json({ error: "Invalid state parameter" });
       return;
     }
+
+    console.log(`✅ [callback] state validated via ${cookieMatch ? "cookie" : "store"}`);
 
     // Clear state cookie
     res.clearCookie("oauth_state");

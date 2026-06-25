@@ -7,6 +7,8 @@ import Patient from "../schemas/patient-schema";
 import Doctor from "../schemas/doctor-schema";
 import { PatientT } from "../types/patient-type";
 import { DoctorT } from "../types/doctor-type";
+import OAuthState from "../schemas/oauth-state-schema";
+import { OAuthStateResult } from "../types/oauth-state-type";
 
 // Environment variables
 const domain: string = process.env.CRIIPTO_DOMAIN as string;
@@ -74,6 +76,63 @@ export function generateCSRFToken(): string {
 
 export function generateRandomState(): string {
   return crypto.randomBytes(16).toString('hex');
+}
+
+/**
+ * Persists an issued OIDC `state` so the BankID callback can validate it even when
+ * the `oauth_state` cookie does not survive the same-device round-trip (e.g. login
+ * started in an in-app browser, callback opens in Safari — different cookie jar).
+ *
+ * Best-effort: any failure is swallowed so login falls back to the cookie-only path
+ * (i.e. never worse than before this store existed).
+ */
+export async function storeOAuthState(state: string): Promise<void> {
+  try {
+    await OAuthState.create({ state });
+    console.log(`🗝️ [oauth_state] issued + persisted state=${state.slice(0, 8)}…`);
+  } catch (error) {
+    console.error("⚠️ [oauth_state] failed to persist (cookie fallback still active):", error);
+  }
+}
+
+/**
+ * Validates an issued OIDC `state` against the server-side store, single-use.
+ *
+ * Atomically claims the state (sets `usedAt` only if not already used) so two parallel
+ * callbacks can't both succeed. The entry is kept (until TTL) rather than deleted, so a
+ * duplicate callback is recognised as benign ("duplicate") instead of "invalid".
+ *
+ * Returns: "fresh" (valid, consumed now) | "duplicate" (already used earlier) |
+ * "invalid" (never issued / TTL-expired) | "error" (store failed — fall back to cookie).
+ */
+export async function consumeOAuthState(state: string): Promise<OAuthStateResult> {
+  const tag = state.slice(0, 8);
+  try {
+    // Claim atomically: match only if usedAt is not yet set, then set it.
+    const claimed = await OAuthState.findOneAndUpdate(
+      { state, usedAt: { $exists: false } },
+      { $set: { usedAt: new Date() } },
+      { new: false } // returns the pre-update doc (or null if no fresh match)
+    );
+
+    if (claimed) {
+      console.log(`✅ [oauth_state] store match (fresh) state=${tag}…`);
+      return "fresh";
+    }
+
+    // No fresh match — distinguish "already used" (duplicate) from "never issued".
+    const existing = await OAuthState.findOne({ state });
+    if (existing) {
+      console.warn(`♻️ [oauth_state] DUPLICATE callback state=${tag}… (already used at ${existing.usedAt?.toISOString?.() ?? "unknown"})`);
+      return "duplicate";
+    }
+
+    console.warn(`❌ [oauth_state] NO store entry state=${tag}… (never issued or TTL-expired)`);
+    return "invalid";
+  } catch (error) {
+    console.error(`⚠️ [oauth_state] store lookup failed state=${tag}… — falling back to cookie check:`, error);
+    return "error";
+  }
 }
 
 /**
