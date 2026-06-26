@@ -8,6 +8,8 @@
     "dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/server.ts",
     "scheduler:dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/jobs/scheduler.ts",
     "scheduler:start": "node dist/jobs/scheduler.js",
+    "drip:once": "ts-node src/jobs/run-once.ts drip",
+    "backup:once": "ts-node src/jobs/run-once.ts backup",
     "lint": "eslint 'src/**/*.ts'",
     "lint:fix": "eslint 'src/**/*.ts' --fix",
     "create-admin": "ts-node scripts/create-admin.ts",
