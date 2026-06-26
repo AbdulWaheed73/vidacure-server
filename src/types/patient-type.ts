@@ -123,6 +123,8 @@ export type PatientT = {
     currentWeight: number;
     hasSideEffects: boolean;
     sideEffectsDescription?: string;
+    currentMedications?: { name: string; dosage?: string }[];
+    prescribedMedications?: { name: string; dosage?: string }[];
     medicationName?: string;
     dosage?: string;
     usageInstructions?: string;

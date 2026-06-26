@@ -386,6 +386,18 @@ export async function getPatientProfile(
             currentWeight: request.currentWeight,
             hasSideEffects: request.hasSideEffects,
             sideEffectsDescription: request.sideEffectsDescription ?? null,
+            currentMedications: Array.isArray(request.currentMedications)
+              ? request.currentMedications.map((med) => ({
+                  name: med.name,
+                  dosage: med.dosage ?? null,
+                }))
+              : [],
+            prescribedMedications: Array.isArray(request.prescribedMedications)
+              ? request.prescribedMedications.map((med) => ({
+                  name: med.name,
+                  dosage: med.dosage ?? null,
+                }))
+              : [],
             medicationName: request.medicationName ?? null,
             dosage: request.dosage ?? null,
             usageInstructions: request.usageInstructions ?? null,

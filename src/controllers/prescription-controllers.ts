@@ -4,13 +4,13 @@ import PatientSchema from "../schemas/patient-schema";
 import DoctorSchema from "../schemas/doctor-schema";
 import { AuthenticatedRequest } from "../types/generic-types";
 import { auditDatabaseOperation, auditDatabaseError } from "../middleware/audit-middleware";
-import { PrescriptionRequestStatus } from "../types/prescription-types";
+import { PrescriptionRequestStatus, CurrentMedication } from "../types/prescription-types";
 import { sendPrescriptionRequestNotification } from "../services/email-service";
 
 // Create prescription request
 export const createPrescriptionRequest = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { currentWeight, hasSideEffects, sideEffectsDescription } = req.body;
+    const { currentWeight, hasSideEffects, sideEffectsDescription, currentMedications } = req.body;
     const userId = req.user?.userId;
 
     if (!userId) {
@@ -28,6 +28,26 @@ export const createPrescriptionRequest = async (req: AuthenticatedRequest, res: 
       return;
     }
 
+    // Patient-reported current medications are optional. Sanitize: trim values
+    // and keep only rows that have a non-empty medication name.
+    let sanitizedMedications: CurrentMedication[] = [];
+    if (currentMedications !== undefined) {
+      if (!Array.isArray(currentMedications)) {
+        res.status(400).json({ error: "currentMedications must be an array" });
+        return;
+      }
+      sanitizedMedications = currentMedications
+        .map((med: { name?: unknown; dosage?: unknown }) => ({
+          name: typeof med?.name === 'string' ? med.name.trim() : '',
+          dosage: typeof med?.dosage === 'string' ? med.dosage.trim() : '',
+        }))
+        .filter((med) => med.name.length > 0)
+        .map((med) => ({
+          name: med.name,
+          dosage: med.dosage.length > 0 ? med.dosage : undefined,
+        }));
+    }
+
     const patient = await PatientSchema.findById(userId);
 
     if (!patient) {
@@ -43,6 +63,7 @@ export const createPrescriptionRequest = async (req: AuthenticatedRequest, res: 
       currentWeight,
       hasSideEffects,
       sideEffectsDescription: hasSideEffects ? sideEffectsDescription : undefined,
+      currentMedications: sanitizedMedications,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -120,7 +141,7 @@ export const getPrescriptionRequests = async (req: AuthenticatedRequest, res: Re
 export const updatePrescriptionRequestStatus = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { requestId } = req.params;
-    const { status, medicationName, dosage, usageInstructions, dateIssued, validTill, rejectionNote } = req.body;
+    const { status, prescribedMedications, medicationName, dosage, usageInstructions, dateIssued, validTill, rejectionNote } = req.body;
     const userId = req.user?.userId;
 
     if (!userId) {
@@ -136,6 +157,29 @@ export const updatePrescriptionRequestStatus = async (req: AuthenticatedRequest,
 
     if (status === PrescriptionRequestStatus.DENIED && (typeof rejectionNote !== 'string' || !rejectionNote.trim())) {
       res.status(400).json({ error: "Rejection note is required when denying a prescription request" });
+      return;
+    }
+
+    // Sanitize the doctor-prescribed medications. Accept the new array form;
+    // fall back to the legacy single medicationName/dosage fields for older clients.
+    let sanitizedPrescribed: CurrentMedication[] = [];
+    if (Array.isArray(prescribedMedications)) {
+      sanitizedPrescribed = prescribedMedications
+        .map((med: { name?: unknown; dosage?: unknown }) => ({
+          name: typeof med?.name === 'string' ? med.name.trim() : '',
+          dosage: typeof med?.dosage === 'string' ? med.dosage.trim() : '',
+        }))
+        .filter((med) => med.name.length > 0)
+        .map((med) => ({ name: med.name, dosage: med.dosage.length > 0 ? med.dosage : undefined }));
+    } else if (typeof medicationName === 'string' && medicationName.trim()) {
+      sanitizedPrescribed = [{
+        name: medicationName.trim(),
+        dosage: typeof dosage === 'string' && dosage.trim() ? dosage.trim() : undefined,
+      }];
+    }
+
+    if (status === PrescriptionRequestStatus.APPROVED && sanitizedPrescribed.length === 0) {
+      res.status(400).json({ error: "At least one prescribed medication is required when approving a request" });
       return;
     }
 
@@ -166,8 +210,13 @@ export const updatePrescriptionRequestStatus = async (req: AuthenticatedRequest,
     request.updatedAt = new Date();
 
     // Update prescription details if provided
-    if (medicationName) request.medicationName = medicationName;
-    if (dosage) request.dosage = dosage;
+    if (sanitizedPrescribed.length > 0) {
+      request.prescribedMedications = sanitizedPrescribed;
+      // Keep the legacy single fields in sync with the first medication so older
+      // reads and the top-level prescription summary continue to work.
+      request.medicationName = sanitizedPrescribed[0].name;
+      request.dosage = sanitizedPrescribed[0].dosage;
+    }
     if (usageInstructions) request.usageInstructions = usageInstructions;
     if (dateIssued) request.dateIssued = new Date(dateIssued);
     if (validTill) request.validTill = new Date(validTill);
@@ -176,11 +225,15 @@ export const updatePrescriptionRequestStatus = async (req: AuthenticatedRequest,
       request.rejectionNote = rejectionNote.trim();
     }
 
-    // When approved, also set the top-level prescription field
+    // When approved, also set the top-level prescription field. Summarize all
+    // prescribed medications into the medicationDetails string.
     if (status === PrescriptionRequestStatus.APPROVED) {
+      const medicationDetails = sanitizedPrescribed
+        .map((med) => (med.dosage ? `${med.name} (${med.dosage})` : med.name))
+        .join(', ');
       patient.prescription = {
         doctor: new Types.ObjectId(userId),
-        medicationDetails: request.medicationName || '',
+        medicationDetails,
         validFrom: request.dateIssued || new Date(),
         validTo: request.validTill || new Date(),
         status: 'active',

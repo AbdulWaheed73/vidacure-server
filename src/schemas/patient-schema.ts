@@ -172,6 +172,22 @@ const PatientSchema: Schema = new Schema(
         currentWeight: { type: Number, required: true },
         hasSideEffects: { type: Boolean, required: true },
         sideEffectsDescription: { type: String, required: false },
+        // Patient-reported medications they have actually been taking, so the
+        // doctor can compare against what was previously prescribed before
+        // issuing a new prescription. Self-reported and optional.
+        currentMedications: [
+          {
+            name: { type: String, required: true },
+            dosage: { type: String, required: false }
+          }
+        ],
+        // Doctor-prescribed medications (one or more) issued on approval.
+        prescribedMedications: [
+          {
+            name: { type: String, required: true },
+            dosage: { type: String, required: false }
+          }
+        ],
         medicationName: { type: String, required: false },
         dosage: { type: String, required: false },
         usageInstructions: { type: String, required: false },

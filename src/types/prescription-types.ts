@@ -1,5 +1,16 @@
 import { Types } from "mongoose";
 
+// A single medication the patient reports currently taking (self-reported),
+// captured at prescription-request time so the doctor can see what was actually
+// taken vs. what was previously prescribed.
+export type CurrentMedication = {
+  name: string;
+  dosage?: string;
+};
+
+// Doctor-prescribed medications share the same shape as patient-reported ones.
+export type PrescribedMedication = CurrentMedication;
+
 // Prescription Request Types
 export type PrescriptionRequestT = {
   _id?: Types.ObjectId;
@@ -7,6 +18,8 @@ export type PrescriptionRequestT = {
   currentWeight: number;
   hasSideEffects: boolean;
   sideEffectsDescription?: string;
+  currentMedications?: CurrentMedication[];
+  prescribedMedications?: PrescribedMedication[];
   medicationName?: string;
   dosage?: string;
   usageInstructions?: string;
@@ -54,10 +67,12 @@ export type CreatePrescriptionRequestData = {
   currentWeight: number;
   hasSideEffects: boolean;
   sideEffectsDescription?: string;
+  currentMedications?: CurrentMedication[];
 };
 
 export type UpdatePrescriptionRequestData = {
   status: PrescriptionRequestStatus;
+  prescribedMedications?: PrescribedMedication[];
   medicationName?: string;
   dosage?: string;
   usageInstructions?: string;

@@ -67,6 +67,14 @@ export const dataExportService = {
         currentWeight: req.currentWeight,
         hasSideEffects: req.hasSideEffects,
         sideEffectsDescription: req.sideEffectsDescription,
+        currentMedications: (req.currentMedications || []).map(med => ({
+          name: med.name,
+          dosage: med.dosage,
+        })),
+        prescribedMedications: (req.prescribedMedications || []).map(med => ({
+          name: med.name,
+          dosage: med.dosage,
+        })),
         medicationName: req.medicationName,
         dosage: req.dosage,
         usageInstructions: req.usageInstructions,
