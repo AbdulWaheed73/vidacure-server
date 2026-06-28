@@ -184,14 +184,14 @@ export const verifyAdmin2FA = async (
     res.cookie("admin_token", adminJWT, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: "lax", // same-site (vidacure.se ↔ vidacure.se); avoids browser purging the non-httpOnly CSRF cookie
       maxAge: Number(process.env.TTL),
     });
 
     res.cookie("admin_csrf_token", csrfToken, {
       httpOnly: false,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: "lax", // same-site (vidacure.se ↔ vidacure.se); avoids browser purging the non-httpOnly CSRF cookie
       maxAge: Number(process.env.TTL),
     });
 
@@ -331,14 +331,14 @@ export const confirmAdmin2FA = async (
     res.cookie("admin_token", adminJWT, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: "lax", // same-site (vidacure.se ↔ vidacure.se); avoids browser purging the non-httpOnly CSRF cookie
       maxAge: Number(process.env.TTL),
     });
 
     res.cookie("admin_csrf_token", csrfToken, {
       httpOnly: false,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: "lax", // same-site (vidacure.se ↔ vidacure.se); avoids browser purging the non-httpOnly CSRF cookie
       maxAge: Number(process.env.TTL),
     });
 
