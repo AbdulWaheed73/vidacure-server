@@ -12,7 +12,8 @@ import databaseConnection from "../utils/database-connection";
 import { startAuditFlushTimer, stopAuditFlushTimer, flushAuditBuffer } from "../services/audit-service";
 import { runDripEmails } from "./definitions/drip-emails";
 import { runMongoBackup } from "./definitions/mongo-backup";
-import { dripConfig, backupConfig } from "../config/drip-config";
+import { runAuditArchive } from "./definitions/audit-archive";
+import { dripConfig, backupConfig, auditArchiveConfig } from "../config/drip-config";
 
 dotenv.config();
 
@@ -58,6 +59,18 @@ async function main(): Promise<void> {
     console.log(`[scheduler] mongo-backup scheduled "${backupConfig.cron}" (${backupConfig.timezone}) → ${backupConfig.s3Bucket}`);
   } else {
     console.log("[scheduler] mongo-backup disabled (BACKUP_S3_BUCKET not set)");
+  }
+
+  // Audit-log archive → S3 (Athena cold tier). Only if enabled AND a bucket is set.
+  if (auditArchiveConfig.enabled && auditArchiveConfig.s3Bucket) {
+    cron.schedule(auditArchiveConfig.cron, () => runGuarded("audit-archive", runAuditArchive), {
+      timezone: auditArchiveConfig.timezone,
+    });
+    console.log(
+      `[scheduler] audit-archive scheduled "${auditArchiveConfig.cron}" (${auditArchiveConfig.timezone}) → ${auditArchiveConfig.s3Bucket}, exportOnly=${auditArchiveConfig.exportOnly}`
+    );
+  } else {
+    console.log("[scheduler] audit-archive disabled (AUDIT_ARCHIVE_ENABLED=false or no bucket)");
   }
 
   console.log("🕒 Scheduler is up.");

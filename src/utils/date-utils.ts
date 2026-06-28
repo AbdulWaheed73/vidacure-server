@@ -20,3 +20,13 @@ export function subtractDays(date: Date, days: number): Date {
   d.setDate(d.getDate() - days);
   return d;
 }
+
+/** Start of the UTC calendar day (00:00:00.000 UTC) for the given date. */
+export function startOfUtcDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+/** Format a date as YYYY-MM-DD in UTC (used for Athena `dt=` partitions). */
+export function utcDateKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}

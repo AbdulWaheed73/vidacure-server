@@ -19,6 +19,10 @@ export const dripConfig = {
   // Master switch — set DRIP_ENABLED=false to pause all sends without removing the cron.
   enabled: bool("DRIP_ENABLED", true),
 
+  // Dry run (testing): run the full eligibility logic and log who WOULD get which
+  // email, but send nothing and write nothing (no Resend call, no DB mutations).
+  dryRun: bool("DRIP_DRY_RUN", false),
+
   // Cron expression + timezone for the daily scan (pinned TZ avoids DST drift).
   cron: process.env.DRIP_CRON || "0 9 * * *", // every day 09:00
   timezone: process.env.DRIP_TIMEZONE || "Europe/Stockholm",
@@ -45,8 +49,40 @@ export const dripConfig = {
 export const backupConfig = {
   // The backup cron only registers if a destination bucket is configured.
   s3Bucket: process.env.BACKUP_S3_BUCKET || "",
-  s3Prefix: process.env.BACKUP_S3_PREFIX || "mongo",
+  // Date-partitioned: <prefix>/dt=YYYY-MM-DD/full.gz — keeps the 15-day lifecycle rule clean.
+  s3Prefix: process.env.BACKUP_S3_PREFIX || "mongo/dump",
   cron: process.env.BACKUP_CRON || "0 2 * * *", // every day 02:00
   timezone: process.env.BACKUP_TIMEZONE || "Europe/Stockholm",
+  mongoUri: process.env.MONGODB_URI || "",
+};
+
+export const auditArchiveConfig = {
+  // Master switch — OFF by default. Won't touch anything until you flip this AND set a bucket.
+  enabled: bool("AUDIT_ARCHIVE_ENABLED", false),
+
+  // Safety: export to S3 but DO NOT delete from MongoDB. Keep this true until you've
+  // verified the S3 files look right, then set false to enable the delete step.
+  exportOnly: bool("AUDIT_ARCHIVE_EXPORT_ONLY", true),
+
+  // Logs whose whole UTC day is older than this many days get archived + (optionally) removed.
+  afterDays: num("AUDIT_ARCHIVE_AFTER_DAYS", 90),
+
+  // Falls back to the DR backup bucket if a dedicated one isn't set.
+  s3Bucket: process.env.AUDIT_ARCHIVE_S3_BUCKET || process.env.BACKUP_S3_BUCKET || "",
+  s3Prefix: process.env.AUDIT_ARCHIVE_S3_PREFIX || "audit-archive",
+
+  // Infrequent Access: cheaper, still Athena-queryable (Glacier would need a restore first).
+  storageClass: process.env.AUDIT_ARCHIVE_S3_STORAGE_CLASS || "STANDARD_IA",
+
+  // LOCAL TESTING ONLY: if set, write archive files to this local folder instead of
+  // uploading to S3 (no AWS needed). e.g. AUDIT_ARCHIVE_LOCAL_DIR=./tmp/audit-archive
+  localDir: process.env.AUDIT_ARCHIVE_LOCAL_DIR || "",
+
+  cron: process.env.AUDIT_ARCHIVE_CRON || "30 2 * * *", // 02:30, after the backup
+  timezone: process.env.AUDIT_ARCHIVE_TIMEZONE || "Europe/Stockholm",
+
+  // Bound on days processed per run (protects the initial backlog from a runaway).
+  maxDaysPerRun: num("AUDIT_ARCHIVE_MAX_DAYS_PER_RUN", 40),
+
   mongoUri: process.env.MONGODB_URI || "",
 };

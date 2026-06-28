@@ -41,6 +41,11 @@ import {
   updateEmailTemplate,
   deleteEmailTemplate,
 } from "../controllers/email-template-controllers";
+import {
+  sendPatientEmail,
+  getPatientEmailStatus,
+  getEmailLog,
+} from "../controllers/email-send-controllers";
 
 const router = express.Router();
 
@@ -117,6 +122,11 @@ router.post("/email-templates", createEmailTemplate);
 router.get("/email-templates", listEmailTemplates);
 router.put("/email-templates/:templateId", updateEmailTemplate);
 router.delete("/email-templates/:templateId", deleteEmailTemplate);
+
+// Manual email sending + full send log
+router.post("/patients/:patientId/send-email", sendPatientEmail);
+router.get("/patients/:patientId/email-status", getPatientEmailStatus);
+router.get("/email-log", getEmailLog);
 
 // Platform improvement suggestions — superadmin-only
 router.get("/suggestions", requireAdminRole(['admin']), listSuggestions);

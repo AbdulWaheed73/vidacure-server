@@ -4,6 +4,7 @@ import { unlink } from "fs/promises";
 import os from "os";
 import path from "path";
 import { backupConfig } from "../../config/drip-config";
+import { utcDateKey } from "../../utils/date-utils";
 
 const run = promisify(execFile);
 
@@ -26,12 +27,12 @@ export async function runMongoBackup(): Promise<void> {
     return;
   }
 
-  // Date-stamped key. Built from the run time (no Math.random needed).
+  // Date-partitioned key: <prefix>/dt=YYYY-MM-DD/full.gz — one full snapshot per day,
+  // so the 20-day S3 lifecycle rule evicts the oldest cleanly (rolling window).
   const now = new Date();
   const stamp = now.toISOString().replace(/[:.]/g, "-");
-  const fileName = `vidacure-${stamp}.gz`;
-  const tmpFile = path.join(os.tmpdir(), fileName);
-  const s3Key = `${backupConfig.s3Prefix}/${fileName}`;
+  const tmpFile = path.join(os.tmpdir(), `vidacure-${stamp}.gz`);
+  const s3Key = `${backupConfig.s3Prefix}/dt=${utcDateKey(now)}/full.gz`;
   const s3Uri = `s3://${backupConfig.s3Bucket}/${s3Key}`;
 
   console.log(`[backup] run started at ${now.toISOString()} → ${s3Uri}`);
