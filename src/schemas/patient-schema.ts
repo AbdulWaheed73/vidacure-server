@@ -199,6 +199,14 @@ const PatientSchema: Schema = new Schema(
       }
     ],
 
+    // Monthly drip-email sequence progress (see email-sequence logic in jobs/).
+    // sentTemplateIds is the per-patient source of truth for "what has been sent".
+    emailSequence: {
+      anchorDate: { type: Date },
+      sentTemplateIds: { type: [Types.ObjectId], ref: "EmailTemplate", default: [] },
+      lastSentAt: { type: Date }
+    },
+
     // Giddir lab test patient ID (UUID assigned by Giddir system)
     giddirPatientId: { type: String, sparse: true, index: true },
 

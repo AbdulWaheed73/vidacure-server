@@ -36,6 +36,17 @@ import {
   deleteSuggestion,
 } from "../controllers/suggestion-controllers";
 import {
+  createEmailTemplate,
+  listEmailTemplates,
+  updateEmailTemplate,
+  deleteEmailTemplate,
+} from "../controllers/email-template-controllers";
+import {
+  sendPatientEmail,
+  getPatientEmailStatus,
+  getEmailLog,
+} from "../controllers/email-send-controllers";
+import {
   getErrorLogs,
   getErrorLog,
   getErrorLogSummary,
@@ -111,6 +122,17 @@ router.post("/audit-logs/reviews", createLogReview);
 router.get("/audit-logs/reviews", getLogReviews);
 router.get("/audit-logs/reviews/:id", getLogReviewById);
 router.patch("/audit-logs/reviews/:id/resolve", resolveLogReview);
+
+// Drip-email template stock (monthly automated patient emails)
+router.post("/email-templates", createEmailTemplate);
+router.get("/email-templates", listEmailTemplates);
+router.put("/email-templates/:templateId", updateEmailTemplate);
+router.delete("/email-templates/:templateId", deleteEmailTemplate);
+
+// Manual email sending + full send log
+router.post("/patients/:patientId/send-email", sendPatientEmail);
+router.get("/patients/:patientId/email-status", getPatientEmailStatus);
+router.get("/email-log", getEmailLog);
 
 // Error / crash logs (small single-purpose routes; /summary before /:id)
 router.get("/error-logs", getErrorLogs);

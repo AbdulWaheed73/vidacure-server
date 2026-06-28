@@ -945,3 +945,30 @@ export const sendPrescriptionRequestNotification = async (
     console.error("Failed to send prescription request notification:", err);
   }
 };
+
+type DripEmailParams = {
+  to: string;
+  subject: string;
+  html: string; // full HTML body, authored/stored as an EmailTemplate
+};
+
+/**
+ * Send one drip-campaign email. Unlike the other senders in this file, this one
+ * THROWS on failure on purpose: the scheduler relies on the thrown error to mark
+ * the EmailDispatch row as "failed" (and retry), so a send must never fail
+ * silently here.
+ */
+export const sendDripEmail = async (params: DripEmailParams): Promise<void> => {
+  const from = process.env.RESEND_FROM_EMAIL || "info@vidacure.se";
+
+  const { error } = await resend.emails.send({
+    from,
+    to: params.to,
+    subject: params.subject,
+    html: params.html,
+  });
+
+  if (error) {
+    throw new Error(`Resend error: ${error.message || JSON.stringify(error)}`);
+  }
+};

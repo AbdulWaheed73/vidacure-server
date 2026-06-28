@@ -135,6 +135,16 @@ export type PatientT = {
     updatedAt: Date;
   }[];
 
+  // Monthly drip-email sequence progress. The patient receives each active
+  // EmailTemplate exactly once, anchored to `anchorDate`. We track which
+  // templates were delivered (by id) rather than a numeric index so the
+  // sequence survives admins reordering/editing/deleting templates.
+  emailSequence?: {
+    anchorDate?: Date;                 // "month 0" — when the sequence clock starts
+    sentTemplateIds: Types.ObjectId[]; // templates already delivered (ref: EmailTemplate)
+    lastSentAt?: Date;
+  };
+
   // Giddir lab test patient ID (UUID assigned by Giddir system)
   giddirPatientId?: string;
 
