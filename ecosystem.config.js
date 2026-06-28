@@ -2,8 +2,8 @@ export const apps = [
   {
     name: 'vidacure-server',
     script: 'dist/server.js',
-    instances: 1,
-    exec_mode: 'fork',
+    instances: "max",
+    exec_mode: 'cluster',
     autorestart: true,
     watch: false,
     max_memory_restart: '1G',
