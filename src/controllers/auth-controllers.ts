@@ -34,7 +34,7 @@ export const initiateLogin = async (req: Request, res: Response): Promise<void> 
     let acrValues: string;
     switch (clientType) {
       case "web":
-        acrValues = "urn:grn:authn:se:bankid:same-device";
+        acrValues = "urn:grn:authn:se:bankid:another-device:qr";
         break;
       case "mobile":
         acrValues = "urn:grn:authn:se:bankid:same-device";
