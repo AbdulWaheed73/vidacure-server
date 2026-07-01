@@ -30,6 +30,23 @@ const isLevel = (v: unknown): v is ErrorLevel =>
 const isCategory = (v: unknown): v is ErrorCategory =>
   typeof v === "string" && (ERROR_CATEGORIES as readonly string[]).includes(v);
 
+// Shared filter builder — used by the list AND the export endpoints (DRY).
+function buildErrorLogFilter(query: Record<string, unknown>): FilterQuery<ErrorLogT> {
+  const filter: FilterQuery<ErrorLogT> = {};
+  const { level, category, origin, resolved, dateFrom, dateTo } = query;
+  if (isLevel(level)) filter.level = level;
+  if (isCategory(category)) filter.category = category;
+  if (origin === "server" || origin === "client") filter.origin = origin;
+  if (resolved === "true") filter.resolved = true;
+  else if (resolved === "false") filter.resolved = false;
+  if (typeof dateFrom === "string" || typeof dateTo === "string") {
+    filter.timestamp = {};
+    if (typeof dateFrom === "string") filter.timestamp.$gte = new Date(dateFrom);
+    if (typeof dateTo === "string") filter.timestamp.$lte = new Date(dateTo);
+  }
+  return filter;
+}
+
 // ---- Admin: list (lightweight, DB-projected — no stack/context shipped) ----
 export const getErrorLogs = async (req: AdminAuthenticatedRequest, res: express.Response): Promise<void> => {
   try {
@@ -37,18 +54,7 @@ export const getErrorLogs = async (req: AdminAuthenticatedRequest, res: express.
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
     const skip = (page - 1) * limit;
 
-    const filter: FilterQuery<ErrorLogT> = {};
-    const { level, category, origin, resolved, dateFrom, dateTo } = req.query;
-    if (isLevel(level)) filter.level = level;
-    if (isCategory(category)) filter.category = category;
-    if (origin === "server" || origin === "client") filter.origin = origin;
-    if (resolved === "true") filter.resolved = true;
-    else if (resolved === "false") filter.resolved = false;
-    if (typeof dateFrom === "string" || typeof dateTo === "string") {
-      filter.timestamp = {};
-      if (typeof dateFrom === "string") filter.timestamp.$gte = new Date(dateFrom);
-      if (typeof dateTo === "string") filter.timestamp.$lte = new Date(dateTo);
-    }
+    const filter = buildErrorLogFilter(req.query);
 
     const [logs, totalCount] = await Promise.all([
       ErrorLog.find(filter)
@@ -77,6 +83,42 @@ export const getErrorLogs = async (req: AdminAuthenticatedRequest, res: express.
   } catch (error) {
     await auditAdminAction(req, "admin_view_error_logs", "READ", false, undefined, undefined, error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch error logs" });
+  }
+};
+
+// ---- Admin: export ALL matching logs with FULL details (stack + context) ----
+const MAX_EXPORT = 10000;
+
+export const exportErrorLogs = async (req: AdminAuthenticatedRequest, res: express.Response): Promise<void> => {
+  try {
+    const filter = buildErrorLogFilter(req.query);
+
+    // Full documents (no projection) so the export contains everything needed to fix them.
+    const logs = await ErrorLog.find(filter)
+      .sort({ timestamp: -1 })
+      .limit(MAX_EXPORT)
+      .lean<(ErrorLogT & { _id: Types.ObjectId })[]>();
+
+    const nameMap = await resolveUserNames(logs.flatMap((l) => [l.userId, l.resolvedBy]));
+    const enriched = logs.map((l) => ({
+      ...l,
+      userName: l.userId ? nameMap[String(l.userId)] : undefined,
+      resolvedByName: l.resolvedBy ? nameMap[String(l.resolvedBy)] : undefined,
+    }));
+
+    await auditAdminAction(req, "admin_export_error_logs", "READ", true, undefined, {
+      count: enriched.length,
+      capped: enriched.length >= MAX_EXPORT,
+    });
+    res.json({
+      count: enriched.length,
+      capped: enriched.length >= MAX_EXPORT,
+      exportedAt: new Date().toISOString(),
+      logs: enriched,
+    });
+  } catch (error) {
+    await auditAdminAction(req, "admin_export_error_logs", "READ", false, undefined, undefined, error);
+    res.status(500).json({ error: error instanceof Error ? error.message : "Failed to export error logs" });
   }
 };
 

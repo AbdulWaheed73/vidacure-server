@@ -50,6 +50,7 @@ import {
   getErrorLogs,
   getErrorLog,
   getErrorLogSummary,
+  exportErrorLogs,
   resolveErrorLog,
 } from "../controllers/error-log-controllers";
 
@@ -137,6 +138,7 @@ router.get("/email-log", getEmailLog);
 // Error / crash logs (small single-purpose routes; /summary before /:id)
 router.get("/error-logs", getErrorLogs);
 router.get("/error-logs/summary", getErrorLogSummary);
+router.get("/error-logs/export", exportErrorLogs);
 router.get("/error-logs/:id", getErrorLog);
 router.post("/error-logs/:id/resolve", resolveErrorLog);
 
